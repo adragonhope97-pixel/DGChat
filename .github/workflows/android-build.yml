@@ -33,7 +33,7 @@ jobs:
         run: npm audit --omit=dev || true
 
       - name: 安全与权限测试
-        run: node --test tests/
+        run: node --test tests/*.test.mjs
 
       - name: 同步 Web 资源到安卓工程
         run: npx cap sync android
