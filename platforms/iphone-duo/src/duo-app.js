@@ -635,6 +635,15 @@
         location.reload();
       });
       $('#duoSend').addEventListener('click', sendMsg);
+    $('#duoThreadExit').addEventListener('click', () => {
+      state.threadPartner = null;
+      state.threadReplyTo = null;
+      $('#duoThreadName').textContent = '对话';
+      $('#duoMsgList').innerHTML = '<div class="duo-empty">从左侧选择一个会话</div>';
+      const rb = $('#duoReplyBar');
+      if (rb) rb.hidden = true;
+      if (state.mode === 'single') document.body.dataset.duoPane = 'list';
+    });
     $('#duoReplyCancel').addEventListener('click', () => {
       state.threadReplyTo = null;
       $('#duoReplyBar').hidden = true;

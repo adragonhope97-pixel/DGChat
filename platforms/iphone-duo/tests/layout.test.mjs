@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import duoState from '../src/window-state.js';
 const { resolveLayout, paneVisibility, orientation, DEFAULTS } = duoState;
 
-const cfg = { DUAL_MIN_WIDTH: 760, PANE_MIN_WIDTH: 320, KEYBOARD_SHRINK_RATIO: 0.82 };
+const cfg = { DUAL_MIN_WIDTH: 560, PANE_MIN_WIDTH: 300, KEYBOARD_SHRINK_RATIO: 0.82 };
 
 test('闭合（窄屏）→ 单栏', () => {
   const r = resolveLayout({ width: 414, height: 896 }, cfg); // iPhone 竖屏量级
@@ -26,12 +26,19 @@ test('横屏窄高（如 896×414）→ 仍按宽度判定为双栏', () => {
   assert.equal(orientation(896, 414), 'landscape');
 });
 
-test('断点边界：760 双栏 / 759 单栏 / 320 以下极窄保护', () => {
-  assert.equal(resolveLayout({ width: 760, height: 900 }, cfg).mode, 'dual');
-  assert.equal(resolveLayout({ width: 759, height: 900 }, cfg).mode, 'single');
-  const tiny = resolveLayout({ width: 300, height: 600 }, cfg);
+test('断点边界：560 双栏 / 559 单栏 / 300 以下极窄保护', () => {
+  assert.equal(resolveLayout({ width: 560, height: 900 }, cfg).mode, 'dual');
+  assert.equal(resolveLayout({ width: 559, height: 900 }, cfg).mode, 'single');
+  const tiny = resolveLayout({ width: 299, height: 600 }, cfg);
   assert.equal(tiny.mode, 'single');
   assert.equal(tiny.reason, 'width-below-pane-min');
+});
+
+// 真机 CSS 视口（用户提供）：闭合 466×678 / 展开 626×890
+test('真机尺寸：闭合 466×678 单栏 / 展开 626×890 双栏 / 闭合横屏 678 宽双栏', () => {
+  assert.equal(resolveLayout({ width: 466, height: 678 }, cfg).mode, 'single');
+  assert.equal(resolveLayout({ width: 626, height: 890 }, cfg).mode, 'dual');
+  assert.equal(resolveLayout({ width: 678, height: 466 }, cfg).mode, 'dual');
 });
 
 test('键盘弹出：visualHeight 大幅小于视口高度', () => {

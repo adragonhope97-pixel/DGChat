@@ -223,6 +223,14 @@ textarea.duo-field { resize: vertical; }
 .duo-notif-body { font-size: 13px; line-height: 1.6; }
 .duo-notif-body small { display: block; color: var(--duo-text-3); font-size: 11px; }
 
+.duo-thread-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.duo-thread-exit {
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.07);
+  color: var(--duo-text-3); font-size: 12px; line-height: 1;
+}
+.duo-thread-exit:hover { border-color: var(--duo-accent); color: var(--duo-accent); }
+
 .duo-msg-quote { font-size: 11.5px; color: var(--duo-text-3); padding: 4px 9px; margin-bottom: 3px; border-left: 2px solid var(--duo-accent); background: rgba(255,255,255,0.04); border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .duo-msg-act { background: none; border: none; color: var(--duo-text-3); font-size: 11px; cursor: pointer; padding: 0 3px; }
 .duo-msg-act:hover { color: var(--duo-accent); }
