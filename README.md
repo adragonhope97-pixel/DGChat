@@ -286,6 +286,17 @@ DGChat/
 
 ## 📄 说明
 
+### 制作名单
+
+| 角色 | 成员 |
+| --- | --- |
+| 产品设计 / 需求 / 测试 | A_Dragon（adragonhope97-pixel） |
+| 开发实现 | [ZCode](https://z.ai)（AI 编程助手，GLM 驱动） |
+
+> 本项目由 A_Dragon 提出需求、把控体验并与 ZCode 结对完成：从网页版基础论坛到三端（Web / Android / iOS）交付的全部功能迭代。
+
+### 开源与授权
+
 - **字体**：本项目使用系统字体栈（`-apple-system / PingFang SC / 微软雅黑`）。如需苹果 SF Pro 观感，可自行获取授权字体放入 `web/assets/fonts/` 并添加 `@font-face`（SF Pro 为 Apple 专有字体，随本仓库分发需遵守其许可条款）。
 - **数据**：所有数据存储于 `data/data.json` 与 `data/uploads/`，均为运行时生成。部署时注意定期备份；服务异常断电可能导致最后一次写盘丢失。
 - **图标与背景**：`web/assets/` 内图标与背景图为项目自有资源，可自由替换（背景图切换后主题色自动联动）。
