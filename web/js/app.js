@@ -150,6 +150,7 @@ async function refreshMe() {
 }
 
 function renderUserArea() {
+  if (window.renderNotifBell) renderNotifBell();
   const area = $('#userArea');
   if (me) {
     area.innerHTML = `
@@ -352,6 +353,19 @@ function renderPostCards(listEl, posts, emptyEl) {
       deletePost(Number(btn.dataset.id));
     });
   });
+  listEl.querySelectorAll('.act-hide-post').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await api(`/posts/${btn.dataset.id}/hide-personal`, { method: 'POST' });
+        toast('已隐藏这条动态');
+        btn.closest('.post-card').remove();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+  if (window.bindTopicChips) window.bindTopicChips(listEl);
 }
 
 function renderPosts(posts) {
@@ -363,7 +377,8 @@ function renderPosts(posts) {
 async function toggleFav(postId, btn) {
   if (!me) return openAuthModal();
   try {
-    const data = await api(`/posts/${postId}/favorite`, { method: 'POST' });
+    const adding = !btn.classList.contains('fav');
+    const data = await api(`/posts/${postId}/favorite`, { method: adding ? 'POST' : 'DELETE' });
     btn.classList.toggle('fav', data.favoritedByMe);
     btn.innerHTML = `${data.favoritedByMe ? ICONS.bookmarkFill : ICONS.bookmark} <span class="fav-count">${data.favoriteCount}</span>`;
   } catch (err) {
@@ -389,6 +404,7 @@ function postCardHtml(p) {
         </div>
         <span class="board-tag">${escapeHtml(p.boardName)}</span>
       </div>
+      ${(p.topics || []).length ? `<div class="post-topics">${p.topics.map((t) => `<button class="topic-chip" data-topic="${escapeHtml(t)}">#${escapeHtml(t)}</button>`).join('')}</div>` : ''}
       <div class="post-title">${escapeHtml(p.title)}</div>
       <div class="post-content">${escapeHtml(p.content)}</div>
       ${postImagesHtml(p)}
@@ -406,7 +422,9 @@ function postCardHtml(p) {
                  ${p.isMine ? `<button class="foot-btn act-edit" data-id="${p.id}" title="编辑">${ICONS.edit}</button>` : ''}
                  <button class="foot-btn act-del" data-id="${p.id}" title="${p.isMine ? '删除' : '管理员删除'}">${ICONS.trash}</button>
                </span>`
-            : ''
+            : me && !p.anonymous
+              ? `<span class="post-actions"><button class="foot-btn act-hide-post" data-id="${p.id}" title="隐藏这条动态">${ICONS.eyeOff}</button></span>`
+              : ''
         }
       </div>
     </liquid-glass>`;
@@ -477,7 +495,7 @@ async function deletePost(postId, fromDetail = false) {
 // Esc 关闭最上层的弹窗
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  for (const id of ['adminModal', 'creatorModal', 'relationsModal', 'interestsModal', 'userModal', 'reportModal', 'detailModal', 'editPostModal', 'newPostModal', 'authModal', 'dmModal']) {
+  for (const id of ['securityModal', 'privacyModal', 'topicModal', 'folderPickerModal', 'favManagerModal', 'searchModal', 'notifModal', 'adminModal', 'creatorModal', 'relationsModal', 'interestsModal', 'userModal', 'reportModal', 'detailModal', 'editPostModal', 'newPostModal', 'authModal', 'dmModal']) {
     const mask = $('#' + id);
     if (mask && !mask.hidden) {
       mask.hidden = true;
@@ -497,6 +515,18 @@ async function openNewPostModal() {
   }
   newPostDraftMode = false;
   $('#postVisibility').value = 'public';
+  // 恢复本地自动保存的草稿
+  try {
+    const saved = JSON.parse(localStorage.getItem(draftKey()) || 'null');
+    if (saved && (saved.title || saved.content)) {
+      $('#postTitle').value = saved.title || '';
+      $('#postContent').value = saved.content || '';
+      $('#postVisibility').value = saved.visibility || 'public';
+      $('#postAnonymous').checked = !!saved.anonymous;
+      const el = $('#draftSaveState');
+      if (el) el.textContent = '已恢复 ' + new Date(saved.updatedAt).toLocaleTimeString('zh-CN', { hour12: false }) + ' 的本地草稿';
+    }
+  } catch {}
   const sel = $('#postBoard');
   sel.innerHTML = boards.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
   if (boards.some((b) => b.id === currentBoard)) sel.value = currentBoard;
@@ -507,6 +537,53 @@ async function openNewPostModal() {
 }
 
 $('#fabNew').addEventListener('click', openNewPostModal);
+
+// ---------- 2.1 发帖草稿自动保存（本地暂存，与服务器草稿区分） ----------
+const draftKey = () => 'zdcw_draft_new_' + (me ? me.id : 'anon');
+let draftSaveTimer = null;
+let draftSaveState = 'idle';
+
+function scheduleDraftSave() {
+  if (!me) return;
+  clearTimeout(draftSaveTimer);
+  const el = $('#draftSaveState');
+  if (el) el.textContent = '保存中…';
+  draftSaveState = 'saving';
+  draftSaveTimer = setTimeout(() => {
+    try {
+      const snap = {
+        board: $('#postBoard').value,
+        title: $('#postTitle').value,
+        content: $('#postContent').value,
+        visibility: $('#postVisibility').value,
+        anonymous: $('#postAnonymous').checked,
+        updatedAt: Date.now(),
+      };
+      const prev = JSON.parse(localStorage.getItem(draftKey()) || 'null');
+      if (prev && prev.updatedAt > snap.updatedAt) return; // 其他标签页更新过，保留较新版本
+      localStorage.setItem(draftKey(), JSON.stringify(snap));
+      draftSaveState = 'saved';
+      if (el) el.textContent = '已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    } catch {
+      draftSaveState = 'failed';
+      if (el) el.textContent = '保存失败（本地存储不可用）';
+    }
+  }, 1500);
+}
+
+['input', 'change'].forEach((evt) => {
+  $('#newPostForm').addEventListener(evt, scheduleDraftSave);
+});
+window.addEventListener('storage', (e) => {
+  if (e.key === draftKey() && draftSaveState !== 'saving') {
+    const el = $('#draftSaveState');
+    if (el && !$('#newPostModal').hidden) el.textContent = '已在其他标签页更新';
+  }
+});
+window.addEventListener('offline', () => {
+  const el = $('#draftSaveState');
+  if (el && !$('#newPostModal').hidden) el.textContent = '离线中，内容已暂存本地';
+});
 
 $('#newPostForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -521,6 +598,9 @@ $('#newPostForm').addEventListener('submit', async (e) => {
   try {
     await api('/posts', { method: 'POST', body: fd });
     newPostDraftMode = false;
+    localStorage.removeItem(draftKey());
+    const dss = $('#draftSaveState');
+    if (dss) dss.textContent = '';
     closeModal('newPostModal');
     toast('发布成功！');
     currentBoard = fd.get('board');
@@ -553,6 +633,7 @@ function renderDetail(p, comments) {
       <button class="close-btn" data-close="detailModal">✕</button>
     </div>
     <span class="detail-board-tag">${escapeHtml(p.boardName)}</span>
+    ${(p.topics || []).length ? `<div class="post-topics">${p.topics.map((t) => `<button class="topic-chip" data-topic="${escapeHtml(t)}">#${escapeHtml(t)}</button>`).join('')}</div>` : ''}
     <h1 class="detail-title">${escapeHtml(p.title)}</h1>
     <div class="detail-author${p.author && !p.isMine ? ' author-link' : ''}" ${p.author && !p.isMine ? `data-uid="${p.author.id}"` : ''}>
       ${avatarHtml(p.author, p.anonymous)}
@@ -571,6 +652,8 @@ function renderDetail(p, comments) {
         ${p.favoritedByMe ? ICONS.bookmarkFill : ICONS.bookmark} <span class="fav-count">${p.favoriteCount}</span>&nbsp;收藏
       </button>
       ${p.author && !p.isMine ? `<button class="foot-btn dm-open-btn" data-uid="${p.author.id}" data-name="${escapeHtml(p.author.nickname)}">${ICONS.bubble}&nbsp;私信</button>` : ''}
+      ${me && !p.isMine ? `<button class="foot-btn act-hide-post-detail" title="隐藏这条动态">${ICONS.eyeOff}&nbsp;隐藏</button>` : ''}
+      ${me ? `<button class="foot-btn fav-folder-btn" title="收藏到文件夹">${ICONS.folder}&nbsp;收藏夹</button>` : ''}
       ${p.isMine ? `<button class="foot-btn act-edit-detail" title="编辑">${ICONS.edit}&nbsp;编辑此帖</button>` : ''}
       ${p.canDelete ? `<button class="foot-btn act-del-detail" title="${p.isMine ? '删除' : '管理员删除'}">${ICONS.trash}&nbsp;${p.isMine ? '删除此帖' : '管理员删除'}</button>` : ''}
     </div>
@@ -610,6 +693,22 @@ function renderDetail(p, comments) {
   if (favBtn) {
     favBtn.addEventListener('click', () => toggleFav(p.id, favBtn));
   }
+  const favFolderBtn = box.querySelector('.fav-folder-btn');
+  if (favFolderBtn) favFolderBtn.addEventListener('click', () => openFolderPicker(p.id));
+  const hideBtn = box.querySelector('.act-hide-post-detail');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', async () => {
+      try {
+        await api(`/posts/${p.id}/hide-personal`, { method: 'POST' });
+        toast('已隐藏这条动态');
+        closeModal('detailModal');
+        loadPosts();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  }
+  if (window.bindTopicChips) window.bindTopicChips(box);
   const dmBtn = box.querySelector('.dm-open-btn');
   if (dmBtn) {
     dmBtn.addEventListener('click', () => openDmModal(Number(dmBtn.dataset.uid), dmBtn.dataset.name));
@@ -979,45 +1078,115 @@ async function openThread(uid) {
   }
 }
 
+let threadReplyTo = null;
+let threadMessages = [];
+
 function renderThread(messages) {
+  threadMessages = messages;
   $('#msgList').innerHTML = messages.length
     ? messages
-        .map(
-          (m) => `
-      <div class="msg-row ${m.fromMe ? 'mine' : 'theirs'}">
-        <div class="msg-bubble">${escapeHtml(m.content)}</div>
-        <div class="msg-time">${timeAgo(m.createdAt)}</div>
-      </div>`
-        )
+        .map((m) => {
+          const canRecall = m.fromMe && !m.recalled && Date.now() - m.createdAt < 5 * 60e3;
+          const quote = m.replyTo ? `<div class="msg-quote">引用 ${m.replyTo.fromMe ? '自己' : '对方'}：${escapeHtml(m.replyTo.preview)}</div>` : '';
+          return `
+      <div class="msg-row ${m.fromMe ? 'mine' : 'theirs'}" data-id="${m.id}">
+        ${quote}
+        <div class="msg-bubble ${m.recalled ? 'recalled' : ''}">${m.recalled ? '<i>消息已撤回</i>' : escapeHtml(m.content)}</div>
+        <div class="msg-time">${timeAgo(m.createdAt)}
+          ${canRecall ? `<button class="msg-act" data-id="${m.id}">撤回</button>` : ''}
+          ${!m.recalled && !m.fromMe ? `<button class="msg-act" data-reply="${m.id}">引用</button>` : ''}
+        </div>
+      </div>`;
+        })
         .join('')
     : '<div class="comment-empty">还没有消息，打个招呼吧～</div>';
+  $('#msgList').querySelectorAll('.msg-act').forEach((b) => {
+    if (b.dataset.id) {
+      b.addEventListener('click', async () => {
+        if (!confirm('撤回这条消息？')) return;
+        try {
+          await api(`/messages/${b.dataset.id}/recall`, { method: 'POST' });
+          const fresh = await api('/conversations/' + threadPartnerId);
+          renderThread(fresh.messages);
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    } else if (b.dataset.reply) {
+      b.addEventListener('click', () => {
+        const src = (threadMessages || []).find((m) => m.id === Number(b.dataset.reply));
+        if (!src) return;
+        threadReplyTo = { id: src.id, preview: (src.content || '').slice(0, 50), fromMe: src.fromMe };
+        $('#replyBar').hidden = false;
+        $('#replyPreview').textContent = '引用 ' + (threadReplyTo.fromMe ? '自己' : '对方') + '：' + threadReplyTo.preview;
+        $('#msgInput').focus();
+      });
+    }
+  });
   $('#msgList').scrollTop = $('#msgList').scrollHeight;
 }
 
 function closeThread(showList = true) {
   clearInterval(threadTimer);
   threadPartnerId = null;
+  threadReplyTo = null;
+  if ($('#replyBar')) $('#replyBar').hidden = true;
   $('#threadView').hidden = true;
   if (showList) $('#convList').hidden = false;
 }
+
+$('#threadSearch')?.addEventListener('click', async () => {
+  const q = prompt('在会话中搜索消息：');
+  if (!q) return;
+  try {
+    const data = await api('/messages/search?q=' + encodeURIComponent(q));
+    if (!data.results.length) return toast('没有找到相关消息');
+    const hit = data.results.find((r) => r.partner && r.partner.id === threadPartnerId) || data.results[0];
+    toast(`找到 ${hit.hits.length} 条相关消息`);
+    if (hit.partner.id !== threadPartnerId) {
+      await openThread(hit.partner.id);
+    }
+    setTimeout(() => {
+      const el = $('#msgList').querySelector(`.msg-row[data-id="${hit.hits[0].id}"]`);
+      if (el) el.scrollIntoView({ block: 'center' });
+    }, 600);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+$('#replyCancel')?.addEventListener('click', () => {
+  threadReplyTo = null;
+  $('#replyBar').hidden = true;
+});
 
 $('#threadBack').addEventListener('click', () => {
   closeThread();
   loadConversations();
 });
 
-async function sendMsg() {
+async function sendMsg(retryPayload) {
   const input = $('#msgInput');
-  const content = input.value.trim();
-  if (!content) return;
-  if (!threadPartnerId) return;
+  const payload = retryPayload || {
+    toUserId: threadPartnerId,
+    content: input.value.trim(),
+    clientId: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    replyTo: threadReplyTo ? threadReplyTo.id : undefined,
+  };
+  if (!retryPayload && (!payload.content || !threadPartnerId)) return;
+  const btn = $('#msgSend');
+  btn.disabled = true;
   try {
-    await api('/messages', { method: 'POST', body: { toUserId: threadPartnerId, content } });
-    input.value = '';
-    const data = await api('/conversations/' + threadPartnerId);
+    await api('/messages', { method: 'POST', body: payload });
+    if (!retryPayload) input.value = '';
+    threadReplyTo = null;
+    $('#replyBar').hidden = true;
+    const data = await api('/conversations/' + (payload.toUserId || threadPartnerId));
     renderThread(data.messages);
   } catch (err) {
-    toast(err.message, 'error');
+    window.__pendingMsg = payload; // 保留待重发（幂等 clientId 防重复）
+    toast((navigator.onLine === false ? '网络已断开，消息已保留：' : '') + err.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 }
 

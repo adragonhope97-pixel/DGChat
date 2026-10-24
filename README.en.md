@@ -14,7 +14,7 @@
 
 简体中文 | **English** | [繁體中文（臺灣）](README.zh-TW.md)
 
-> **Current version v2.0** · See [CHANGELOG.md](CHANGELOG.md) for the full changelog
+> **Current version v2.1** · See [CHANGELOG.md](CHANGELOG.md) for the full changelog
 
 ---
 
@@ -99,6 +99,20 @@ Both major versions live in this repository as git tags — neither overwrites t
 | `tests/api.test.mjs` 🆕 | 13 permission & security tests (block bypass / cross-user access / admin escalation / rate limits), run with `node --test tests/` |
 | `CHANGELOG.md` 🆕 | Full version history |
 | `data/migrations/` (generated) | Pre-upgrade data backups, restorable |
+
+---
+
+## 🆕 What's New in 2.1
+
+- **Favorite folders**: multiple folders (create/rename/delete), paged manager, private to you
+- **Notification center**: top-bar bell with unread badge; like / comment / mention / follow / DM notifications; dedupe, read, delete, click-through
+- **Unified search**: posts (time/author/has-image/relevance) / users / topics; local search history (optional)
+- **Topics**: create with `#topic#`; trending topics in Discover (ranked by unique participants); topic detail pages
+- **Privacy controls**: private accounts (follow approval), who can DM / comment (everyone or people I follow), mute, hide individual posts — all enforced server-side
+- **DM upgrades**: recall within 5 minutes, quote reply, in-conversation search, idempotent clientIds, offline retry
+- **Account security center**: session list per device, revoke other sessions, data export, self-service account deletion (triple confirmation + audit)
+- **Admin stats v2**: 7-day active users, 14-day trends, 60s cache
+- **UX**: compose draft autosave (local, conflict-safe), offline banner, SW v8
 
 ---
 

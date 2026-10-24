@@ -1400,3 +1400,95 @@ html.native-android .statusbar-space { height: 34px; }
 .btn.danger-ghost { background: rgba(220, 70, 80, 0.1); border: 1px solid rgba(230, 110, 120, 0.4); color: #e88a92; }
 .author-link { cursor: pointer; }
 .detail-author:hover .author-name { color: var(--accent); }
+
+/* ============ 2.1 通知中心 / 搜索中心 / 收藏夹 / 安全中心 ============ */
+
+/* 通知铃铛 */
+.notif-area { display: flex; align-items: center; margin-right: 6px; }
+.notif-bell {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); color: var(--text-1);
+}
+.notif-bell:hover { border-color: var(--accent); color: var(--accent); }
+.notif-dot {
+  position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: #e8506a; color: #fff; font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.notif-list { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; }
+.notif-item {
+  display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08); cursor: pointer;
+}
+.notif-item.unread { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.notif-item .avatar { width: 34px; height: 34px; font-size: 13px; flex-shrink: 0; }
+.notif-body { flex: 1; min-width: 0; }
+.notif-line { font-size: 13px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; }
+.notif-time { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.notif-del { background: none; border: none; color: var(--text-3); cursor: pointer; padding: 4px; }
+.notif-del:hover { color: #e88a92; }
+
+/* 统一搜索 */
+.search-bar-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.search-bar-row input {
+  flex: 1; height: 40px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06); color: var(--text-1); padding: 0 14px; font-size: 14px; outline: none;
+}
+.search-bar-row input:focus { border-color: var(--accent); }
+.search-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+.search-filters select, .search-filters input[type="text"] {
+  height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06); color: var(--text-1); font-size: 12.5px; padding: 0 8px;
+}
+.search-history { margin-bottom: 10px; }
+.search-history-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+.search-history-head button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; }
+.search-history-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#searchResults .post-card { margin-bottom: 10px; }
+
+/* 话题 */
+.post-topics { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.topic-chip {
+  font-size: 12px; padding: 2px 10px; border-radius: 999px; cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); color: var(--accent);
+}
+.topic-chip:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* 收藏夹 */
+.fav-folders { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.folder-acts { margin-left: 6px; font-style: normal; }
+.folder-acts i { font-style: normal; cursor: pointer; opacity: 0.7; padding: 0 2px; }
+.folder-acts i:hover { opacity: 1; color: var(--accent); }
+.folder-picker { display: flex; flex-direction: column; gap: 8px; }
+
+/* 私信：引用 / 撤回 / 已撤回 */
+.reply-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 14px 8px; padding: 7px 12px; border-radius: 10px; font-size: 12.5px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+}
+.reply-bar button { background: none; border: none; color: var(--text-3); cursor: pointer; }
+.msg-quote {
+  font-size: 11.5px; color: var(--text-3); padding: 4px 10px; margin-bottom: 3px;
+  border-left: 2px solid var(--accent); background: rgba(255,255,255,0.04); border-radius: 6px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.msg-bubble.recalled { opacity: 0.6; font-style: italic; }
+.msg-act {
+  background: none; border: none; color: var(--text-3); font-size: 11px; cursor: pointer; padding: 0 4px;
+}
+.msg-act:hover { color: var(--accent); }
+
+/* 草稿状态 */
+#draftSaveState { margin: 0 0 6px; }
+
+/* 离线横幅 */
+.offline-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 300;
+  background: rgba(180, 70, 40, 0.92); color: #fff; font-size: 12.5px;
+  text-align: center; padding: 6px 12px;
+}
+
+/* 隐私/安全中心复用现有组件，无新增布局 */

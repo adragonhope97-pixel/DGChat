@@ -36,6 +36,10 @@ function loadDiscover() {
     postList.hidden = true;
     if (me) loadDiscUsers();
     else renderDiscUsers([], '登录后查看推荐，或先逛逛「最新动态」');
+  } else if (discTab === 'topics') {
+    usersWrap.hidden = false;
+    postList.hidden = true;
+    if (window.loadTopicTrending) loadTopicTrending();
   } else {
     usersWrap.hidden = true;
     postList.hidden = false;

@@ -66,7 +66,7 @@ after(() => {
 
 test('v1 数据迁移：补齐 2.0 字段且生成备份文件', async () => {
   const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'data.json'), 'utf8'));
-  assert.equal(raw.schemaVersion, 2);
+  assert.equal(raw.schemaVersion, 3);
   for (const u of raw.users) {
     assert.deepEqual(u.interests, []);
     assert.deepEqual(u.following, []);

@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md) | [繁體中文（臺灣）](README.zh-TW.md)
 
-> **当前版本 v2.0** · 完整版本记录见 [CHANGELOG.md](CHANGELOG.md)
+> **当前版本 v2.1** · 完整版本记录见 [CHANGELOG.md](CHANGELOG.md)
 
 **DGChat** 是一个开箱即用的校园论坛（校园墙）应用：一套代码，同时覆盖 **Web / PWA / Android / iOS** 四种形态。后端为零数据库依赖的 Node.js + Express（JSON 文件存储），前端为原生 HTML/CSS/JS 单页应用，配合「液态玻璃」视觉风格与多主题背景系统。
 
@@ -99,6 +99,20 @@
 | `tests/api.test.mjs` 🆕 | 13 项权限与安全测试（屏蔽绕过 / 跨用户访问 / 管理员越权 / 频控等），`node --test tests/` 运行 |
 | `CHANGELOG.md` 🆕 | 完整版本记录 |
 | `data/migrations/`（运行时生成） | 升级前的原始数据备份，可回滚 |
+
+---
+
+## 🆕 DGChat 2.1 新特性
+
+- **收藏夹**：多收藏夹管理（创建/重命名/删除），收藏可归入指定夹；专属管理页 + 分页 + 取消收藏；仅本人可见
+- **通知中心**：顶栏铃铛 + 未读角标；点赞 / 评论 / @提及 / 关注 / 私信通知；去重、已读、删除、点击跳转
+- **统一搜索**：动态（时间/作者/带图/相关度）/ 用户 / 话题三合一；本机搜索历史（可关闭）
+- **话题系统**：发帖用 `#话题名#` 创建；发现页「热门话题」（按独立参与者防刷榜）；话题详情页
+- **隐私与互动**：私密账号（关注需审批）、谁可私信/评论（所有人或我关注的人）、静音、隐藏单条动态——全部服务端强制
+- **私信增强**：5 分钟内撤回、引用回复、会话内搜索、clientId 幂等防重发、断线保留待重发
+- **账号安全中心**：登录会话列表（按设备）、退出其他设备、我的数据导出、账号自助注销（三重确认+审计）
+- **管理统计 v2**：近 7 天活跃用户、14 天趋势、60 秒缓存
+- **体验**：发帖草稿自动保存（本地，防冲突）、断网横幅提示、SW v8
 
 ---
 
@@ -427,6 +441,25 @@ DGChat/
 | GET | `/api/admin/users` · `/api/admin/reports` | 用户管理 / 举报处理（仅管理员） |
 | POST | `/api/admin/users/:id/status` · `/api/admin/reports/:id/handle` | 账号状态 / 举报处理（仅管理员） |
 | GET | `/api/admin/stats` · `/api/admin/logs` | 运营数据 / 操作日志（仅管理员） |
+
+**2.1 新增接口：**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST / PUT / DELETE | `/api/me/folders` | 收藏夹管理 |
+| GET | `/api/me/favorites?folderId=&page=` | 我的收藏（分页，仅本人） |
+| DELETE | `/api/posts/:id/favorite` | 取消收藏 |
+| POST / DELETE | `/api/posts/:id/hide-personal` | 隐藏 / 取消隐藏（个人视图） |
+| POST / DELETE | `/api/users/:id/mute` · GET `/api/me/muted` | 静音管理 |
+| GET | `/api/me/notifications` · POST `/read` · DELETE `/:id` | 通知中心 |
+| PUT | `/api/me/settings` | 隐私与互动设置 |
+| GET | `/api/search?type=&q=&time=&author=&sort=&page=` | 统一搜索 |
+| GET | `/api/topics` · `/api/topics/:name/posts` | 话题列表与详情 |
+| GET | `/api/me/follow-requests` · POST `/:id/(approve\|decline)` | 私密账号关注审批 |
+| GET / DELETE | `/api/me/sessions` · POST `/logout-others` | 会话管理 |
+| POST | `/api/messages/:id/recall` · GET `/api/messages/search` | 消息撤回 / 搜索 |
+| GET | `/api/me/export` | 我的数据导出（频控 3 次/小时） |
+| POST | `/api/me/delete` | 账号自助注销（密码 + 确认词） |
 
 完整字段与行为以 `server/server.js` 为准（含注释）。权限测试覆盖见 `tests/api.test.mjs`（`node --test tests/` 运行）。
 

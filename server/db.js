@@ -160,13 +160,53 @@ function migrate() {
   }
   if (!db.reports) db.reports = [];
   if (!db.adminLogs) db.adminLogs = [];
+
+  // ----- v3：2.1 新结构 -----
+  if (Number(db.schemaVersion || 1) < 3) {
+    for (const u of db.users) {
+      if (!u.settings) u.settings = {
+        privateAccount: false,     // 私密账号：动态仅关注者可见，关注需审批
+        dmPolicy: 'everyone',     // who can DM: everyone | following
+        commentPolicy: 'everyone',// who can comment my posts: everyone | following
+        searchHistory: true,      // 本地搜索历史开关
+      };
+      if (!Array.isArray(u.muted)) u.muted = [];        // 静音（不再看 TA 的内容）
+      if (!Array.isArray(u.hiddenPosts)) u.hiddenPosts = []; // 个人隐藏的帖子
+      if (!Array.isArray(u.followRequests)) u.followRequests = []; // 私密账号的关注申请
+      if (!Array.isArray(u.favoriteFolders)) u.favoriteFolders = [{ id: 0, name: '默认收藏夹', createdAt: Date.now() }];
+      if (!u.favMap || typeof u.favMap !== 'object') {
+        // v2 迁移：帖子上的 favorites 数组 -> 个人收藏夹映射（默认收藏夹 id=0）
+        u.favMap = {};
+      }
+    }
+    // 依据帖子 favorites 建立初始映射
+    for (const x of db.posts) {
+      const owner = db.users.find((u) => u.id === x.userId);
+      for (const uid of x.favorites || []) {
+        const u = db.users.find((w) => w.id === uid);
+        if (u && u.favMap[x.id] === undefined) u.favMap[x.id] = 0;
+      }
+      if (owner && !Array.isArray(x.topics)) x.topics = [];
+      if (x.topics === undefined) x.topics = [];
+    }
+    for (const m of db.messages) {
+      if (m.recalledAt === undefined) m.recalledAt = null;
+      if (m.replyTo === undefined) m.replyTo = null;
+      if (m.clientId === undefined) m.clientId = null;
+    }
+    for (const [tk, rec] of Object.entries(db.tokens)) {
+      if (rec && typeof rec === 'object' && !rec.ua) rec.ua = '未知设备';
+  }
+    if (!db.notifications) db.notifications = [];
+    if (db.seq.notification === undefined) db.seq.notification = 0;
+  }
   if (db.seq.report === undefined) db.seq.report = 0;
   if (db.seq.adminLog === undefined) db.seq.adminLog = 0;
 
   db.schemaVersion = SCHEMA_VERSION;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function save() {
   fs.mkdirSync(DATA_DIR, { recursive: true });

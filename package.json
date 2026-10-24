@@ -1,6 +1,6 @@
 {
   "name": "dgchat",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "DGChat —— 校园论坛（Web / Android / iOS 共用同一套 API）",
   "main": "server/server.js",
   "scripts": {

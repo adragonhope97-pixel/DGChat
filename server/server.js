@@ -311,11 +311,64 @@ function canViewPost(post, me) {
     if (post.status === 'draft') return false;
     if (post.visibility === 'private') return false;
     if (me && blockedPair(author, me)) return false;
+    // 私密账号：动态仅关注者可见
+    if (author.settings && author.settings.privateAccount && !isFollower(me, author)) return false;
   }
   return true;
 }
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
+
+// ---------- 2.1 通知中心 ----------
+// 同一事件 10 分钟内去重（未读状态下不重复打扰）
+function notify(userId, type, actorId, extra = {}) {
+  if (!userId || userId === actorId) return;
+  const recipient = db.data.users.find((u) => u.id === userId);
+  const actor = db.data.users.find((u) => u.id === actorId);
+  if (!recipient || !actor) return;
+  if (blockedPair(recipient, actor)) return; // 屏蔽双方互不发通知
+  if ((recipient.muted || []).includes(actor.id)) return; // 静音者不通知
+  const window = Date.now() - 10 * 60e3;
+  const dup = db.data.notifications.find(
+    (n) => n.userId === userId && n.type === type && n.actorId === actorId &&
+      n.postId === (extra.postId || null) && !n.readAt && n.createdAt > window
+  );
+  if (dup) {
+    dup.createdAt = Date.now();
+    return;
+  }
+  db.data.notifications.push({
+    id: db.nextId('notification'),
+    userId,
+    type, // like | comment | follow | mention | dm | system
+    actorId,
+    postId: extra.postId || null,
+    commentId: extra.commentId || null,
+    text: extra.text || '',
+    createdAt: Date.now(),
+    readAt: null,
+  });
+}
+
+// ---------- 2.1 话题规范化：#中文/字母/数字#，1-20 字，去重小写化（拉丁） ----------
+function extractTopics(text) {
+  const out = [];
+  const re = /#([^#\s]{1,20})#/g;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    const name = m[1].trim();
+    if (!name) continue;
+    const norm = /[a-z]/i.test(name) ? name.toLowerCase() : name;
+    if (!out.includes(norm)) out.push(norm);
+    if (out.length >= 5) break; // 每帖最多 5 个话题
+  }
+  return out;
+}
+
+// 私密账号：非关注者（且非本人/管理员）不可见其动态
+function isFollower(viewer, author) {
+  return !!viewer && (viewer.following || []).includes(author.id);
+}
 
 // ---------- 注册 / 登录 ----------
 
@@ -354,12 +407,18 @@ app.post('/api/auth/register', LIMITS.register, (req, res) => {
     email: emailNorm,
     avatarColor: db.AVATAR_COLORS[id % db.AVATAR_COLORS.length],
     createdAt: Date.now(),
-    // 2.0 字段
+    // 2.0 / 2.1 字段
     interests: [],
     following: [],
     blocked: [],
     status: 'active',
     bio: '',
+    settings: { privateAccount: false, dmPolicy: 'everyone', commentPolicy: 'everyone', searchHistory: true },
+    muted: [],
+    hiddenPosts: [],
+    followRequests: [],
+    favoriteFolders: [{ id: 0, name: '默认收藏夹', createdAt: Date.now() }],
+    favMap: {},
   };
   db.data.users.push(user);
   const token = crypto.randomBytes(24).toString('hex');
@@ -488,7 +547,11 @@ app.get('/api/posts', auth, LIMITS.postList, (req, res) => {
     }
   }
 
-  const views = posts.map((p) => postView(p, req.user));
+  let finalPosts = posts;
+  if (mine !== '1' && liked !== '1' && fav !== '1') {
+    finalPosts = filterPersonal(posts, req.user); // 静音/个人隐藏只影响公共视图
+  }
+  const views = finalPosts.map((p) => postView(p, req.user));
   if (sort === 'hot') {
     views.sort(
       (a, b) =>
@@ -536,6 +599,7 @@ app.post('/api/posts', auth, requireAuth, LIMITS.postCreate, upload.array('image
   if (badImage) return res.status(400).json({ error: badImage });
   const post = {
     id: db.nextId('post'),
+    topics: extractTopics(title + ' ' + content),
     userId: req.user.id,
     board,
     title: title.trim(),
@@ -583,6 +647,7 @@ app.put('/api/posts/:id', auth, requireAuth, upload.array('images', 9), (req, re
   if (badImage) return res.status(400).json({ error: badImage });
   post.title = title.trim();
   post.content = content.trim();
+  post.topics = extractTopics(post.title + ' ' + post.content);
   post.images = [...kept, ...fileUrls(req.files)].slice(0, 9);
   if (req.body.visibility !== undefined) post.visibility = req.body.visibility;
   if (req.body.publish === 'true' || req.body.publish === true) post.status = 'published';
@@ -598,8 +663,16 @@ app.delete('/api/posts/:id', auth, requireAuth, (req, res) => {
     return res.status(403).json({ error: '只能删除自己的帖子' });
   }
   const postId = db.data.posts[idx].id;
+  const ownerId = db.data.posts[idx].userId;
+  // 清理图片文件
+  for (const img of db.data.posts[idx].images || []) {
+    if (img.startsWith('/uploads/')) fs.rm(path.join(UPLOAD_DIR, img.replace('/uploads/', '')), { force: true }, () => {});
+  }
   db.data.posts.splice(idx, 1);
   db.data.comments = db.data.comments.filter((c) => c.postId !== postId);
+  for (const u of db.data.users) if (u.favMap) delete u.favMap[postId]; // 收藏映射清理
+  db.data.notifications = db.data.notifications.filter((n) => n.postId !== postId);
+  secLog('post_deleted', 'postId=' + postId + ' ownerId=' + ownerId + ' by=' + req.user.id);
   db.save();
   res.json({ ok: true });
 });
@@ -613,6 +686,7 @@ app.post('/api/posts/:id/like', auth, requireAuth, (req, res) => {
   if (i === -1) {
     post.likes.push(req.user.id);
     post.likesOn[tk] = (post.likesOn[tk] || 0) + 1;
+    notify(post.userId, 'like', req.user.id, { postId: post.id });
   } else {
     post.likes.splice(i, 1);
     if (post.likesOn[tk]) post.likesOn[tk] -= 1;
@@ -622,15 +696,31 @@ app.post('/api/posts/:id/like', auth, requireAuth, (req, res) => {
 });
 
 // 收藏 / 取消收藏（切换）
+// 收藏：POST 加入指定收藏夹（幂等，可换文件夹），DELETE 移出
 app.post('/api/posts/:id/favorite', auth, requireAuth, (req, res) => {
   const post = db.data.posts.find((p) => p.id === Number(req.params.id));
   if (!post || !canViewPost(post, req.user)) return res.status(404).json({ error: '帖子不存在或已被删除' });
   if (!post.favorites) post.favorites = [];
-  const i = post.favorites.indexOf(req.user.id);
-  if (i === -1) post.favorites.push(req.user.id);
-  else post.favorites.splice(i, 1);
+  const folders = req.user.favoriteFolders;
+  let folderId = Number(req.body && req.body.folderId) || 0;
+  if (!folders.some((f) => f.id === folderId)) folderId = 0;
+  if (!req.user.favMap[post.id]) {
+    req.user.favMap[post.id] = folderId;
+    if (!post.favorites.includes(req.user.id)) post.favorites.push(req.user.id);
+  } else {
+    req.user.favMap[post.id] = folderId; // 已收藏：仅移动到目标文件夹
+  }
   db.save();
-  res.json({ favoriteCount: post.favorites.length, favoritedByMe: i === -1 });
+  res.json({ favoriteCount: post.favorites.length, favoritedByMe: true, folderId: req.user.favMap[post.id] });
+});
+app.delete('/api/posts/:id/favorite', auth, requireAuth, (req, res) => {
+  const post = db.data.posts.find((p) => p.id === Number(req.params.id));
+  if (!post) return res.status(404).json({ error: '帖子不存在或已被删除' });
+  delete req.user.favMap[post.id];
+  const i = (post.favorites || []).indexOf(req.user.id);
+  if (i !== -1) post.favorites.splice(i, 1);
+  db.save();
+  res.json({ favoriteCount: (post.favorites || []).length, favoritedByMe: false });
 });
 
 // ---------- 评论 ----------
@@ -638,6 +728,11 @@ app.post('/api/posts/:id/favorite', auth, requireAuth, (req, res) => {
 app.post('/api/posts/:id/comments', auth, requireAuth, LIMITS.comment, (req, res) => {
   const post = db.data.posts.find((p) => p.id === Number(req.params.id));
   if (!post || !canViewPost(post, req.user)) return res.status(404).json({ error: '帖子不存在或已被删除' });
+  const author = db.data.users.find((u) => u.id === post.userId);
+  const cp = author && author.settings && author.settings.commentPolicy;
+  if (cp === 'following' && post.userId !== req.user.id && !isAdmin(req.user) && !isFollower(req.user, author)) {
+    return res.status(403).json({ error: '作者仅允许关注者评论' });
+  }
   const { content, anonymous } = req.body || {};
   if (!content || !content.trim()) return res.status(400).json({ error: '评论内容不能为空' });
   if (content.length > 2000) return res.status(400).json({ error: '评论最多 2000 字' });
@@ -652,6 +747,13 @@ app.post('/api/posts/:id/comments', auth, requireAuth, LIMITS.comment, (req, res
   };
   db.data.comments.push(comment);
   db.save();
+  notify(post.userId, 'comment', req.user.id, { postId: post.id, commentId: comment.id });
+  for (const t of extractTopics(comment.content)) {} // 评论话题不入库，仅防误用
+  // @提及：通知被提及者（存在、非本人、未屏蔽）
+  for (const mm of String(comment.content || '').matchAll(/@([a-zA-Z0-9_]{3,20})/g)) {
+    const mentioned = db.data.users.find((u) => u.username === mm[1]);
+    if (mentioned) notify(mentioned.id, 'mention', req.user.id, { postId: post.id, commentId: comment.id });
+  }
   res.json({ comment: commentView(comment, req.user) });
 });
 
@@ -749,7 +851,14 @@ app.get('/api/conversations/:userId', auth, requireAuth, (req, res) => {
         m.readAt = Date.now();
         changed = true;
       }
-      return { id: m.id, content: m.content, createdAt: m.createdAt, fromMe: m.fromId === req.user.id };
+      return {
+        id: m.id,
+        content: m.recalledAt ? null : m.content,
+        recalled: !!m.recalledAt,
+        replyTo: m.replyTo || null,
+        createdAt: m.createdAt,
+        fromMe: m.fromId === req.user.id,
+      };
     });
   if (changed) db.save();
   res.json({ user: publicUser(partner), messages: msgs });
@@ -767,6 +876,31 @@ app.post('/api/messages', auth, requireAuth, LIMITS.message, (req, res) => {
   if (!content || !content.trim()) return res.status(400).json({ error: '内容不能为空' });
   if (content.length > 2000) return res.status(400).json({ error: '内容最多 2000 字' });
 
+  // 私信策略：对方仅允许关注者私信
+  if (partner.id !== req.user.id && partner.settings && partner.settings.dmPolicy === 'following') {
+    if (!(partner.following || []).includes(req.user.id)) {
+      return res.status(403).json({ error: '对方仅接收关注者的私信' });
+    }
+  }
+  // 幂等：同 clientId 24h 内不重复落库（弱网重试防重复发送）
+  const clientId = String(req.body.clientId || '').slice(0, 64) || null;
+  if (clientId) {
+    const dup = db.data.messages.find(
+      (m) => m.fromId === req.user.id && m.clientId === clientId && Date.now() - m.createdAt < 24 * 3600e3
+    );
+    if (dup) {
+      return res.json({ message: { id: dup.id, content: dup.content, createdAt: dup.createdAt, fromMe: true }, deduped: true });
+    }
+  }
+  // 引用：校验引用消息必须是双方会话内的消息
+  let replyTo = null;
+  if (req.body.replyTo) {
+    const src = db.data.messages.find((m) => m.id === Number(req.body.replyTo));
+    const participants = src && [src.fromId, src.toId];
+    if (src && participants.includes(req.user.id) && participants.includes(partner.id)) {
+      replyTo = { id: src.id, preview: src.content.slice(0, 50), fromMe: src.fromId === req.user.id };
+    }
+  }
   const msg = {
     id: db.nextId('message'),
     fromId: req.user.id,
@@ -774,10 +908,46 @@ app.post('/api/messages', auth, requireAuth, LIMITS.message, (req, res) => {
     content: content.trim(),
     createdAt: Date.now(),
     readAt: null,
+    recalledAt: null,
+    replyTo,
+    clientId,
   };
   db.data.messages.push(msg);
   db.save();
-  res.json({ message: { id: msg.id, content: msg.content, createdAt: msg.createdAt, fromMe: true } });
+  if (partner.id !== req.user.id) notify(partner.id, 'dm', req.user.id, { text: '' }); // 通知不含消息内容
+  res.json({ message: { id: msg.id, content: msg.content, createdAt: msg.createdAt, fromMe: true, replyTo } });
+});
+// 消息撤回：仅发送者本人，5 分钟内
+app.post('/api/messages/:id/recall', auth, requireAuth, (req, res) => {
+  const m = db.data.messages.find((x) => x.id === Number(req.params.id));
+  if (!m) return res.status(404).json({ error: '消息不存在' });
+  if (m.fromId !== req.user.id) return res.status(403).json({ error: '只能撤回自己的消息' });
+  if (m.recalledAt) return res.status(409).json({ error: '该消息已撤回' });
+  if (Date.now() - m.createdAt > 5 * 60e3) return res.status(400).json({ error: '超过 5 分钟无法撤回' });
+  m.recalledAt = Date.now();
+  m.content = '';
+  db.save();
+  res.json({ ok: true });
+});
+// 会话内消息搜索（仅参与者可见）
+app.get('/api/messages/search', auth, requireAuth, LIMITS.search, (req, res) => {
+  const kw = String(req.query.q || '').trim().toLowerCase();
+  if (!kw) return res.json({ results: [] });
+  const seen = new Map();
+  for (const m of db.data.messages) {
+    if (m.recalledAt) continue;
+    const involved = m.fromId === req.user.id || m.toId === req.user.id;
+    if (!involved || !m.content.toLowerCase().includes(kw)) continue;
+    const partnerId = m.fromId === req.user.id ? m.toId : m.fromId;
+    if (!seen.has(partnerId)) {
+      seen.set(partnerId, { partner: publicUser(db.data.users.find((u) => u.id === partnerId)), hits: [] });
+    }
+    const entry = seen.get(partnerId);
+    if (entry.hits.length < 5) {
+      entry.hits.push({ id: m.id, content: m.content, createdAt: m.createdAt, fromMe: m.fromId === req.user.id });
+    }
+  }
+  res.json({ results: [...seen.values()].slice(0, 20) });
 });
 
 
@@ -897,11 +1067,40 @@ app.post('/api/users/:id/follow', auth, requireAuth, (req, res) => {
   if (!target || target.status === 'banned') return res.status(404).json({ error: '用户不存在' });
   if (target.id === req.user.id) return res.status(400).json({ error: '不能关注自己' });
   if (blockedPair(target, req.user)) return res.status(403).json({ error: '无法关注该用户' });
-  if (!req.user.following.includes(target.id)) {
-    req.user.following.push(target.id);
-    db.save();
+  if ((req.user.following || []).includes(target.id)) return res.json({ ok: true, following: true });
+  // 私密账号：进入审批队列，不直接建立关注
+  if (target.settings && target.settings.privateAccount) {
+    if (!target.followRequests.includes(req.user.id)) {
+      target.followRequests.push(req.user.id);
+      db.save();
+    }
+    return res.json({ ok: true, following: false, pending: true });
   }
+  req.user.following.push(target.id);
+  notify(target.id, 'follow', req.user.id);
+  db.save();
   res.json({ ok: true, following: true });
+});
+// 私密账号的关注申请：列表 / 同意 / 拒绝
+app.get('/api/me/follow-requests', auth, requireAuth, (req, res) => {
+  const list = (req.user.followRequests || []).map((id) => publicUser(db.data.users.find((u) => u.id === id))).filter(Boolean);
+  res.json({ users: list });
+});
+app.post('/api/me/follow-requests/:id/approve', auth, requireAuth, (req, res) => {
+  const rid = Number(req.params.id);
+  if (!(req.user.followRequests || []).includes(rid)) return res.status(404).json({ error: '申请不存在' });
+  req.user.followRequests = req.user.followRequests.filter((x) => x !== rid);
+  const requester = db.data.users.find((u) => u.id === rid);
+  if (requester && !requester.following.includes(req.user.id)) requester.following.push(req.user.id);
+  if (requester) notify(req.user.id, 'follow', rid);
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/me/follow-requests/:id/decline', auth, requireAuth, (req, res) => {
+  const rid = Number(req.params.id);
+  req.user.followRequests = (req.user.followRequests || []).filter((x) => x !== rid);
+  db.save();
+  res.json({ ok: true });
 });
 app.delete('/api/users/:id/follow', auth, requireAuth, (req, res) => {
   const target = db.data.users.find((u) => u.id === Number(req.params.id));
@@ -1254,7 +1453,499 @@ app.get('/api/admin/logs', auth, requireAdmin, (req, res) => {
   res.json({ logs: list });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version: '2.0.1', schema: db.SCHEMA_VERSION }));
+
+// ========== 2.1 收藏夹管理 ==========
+
+app.get('/api/me/folders', auth, requireAuth, (req, res) => {
+  const folders = (req.user.favoriteFolders || []).map((f) => ({
+    ...f,
+    count: Object.values(req.user.favMap).filter((fid) => fid === f.id).length,
+  }));
+  res.json({ folders });
+});
+app.post('/api/me/folders', auth, requireAuth, LIMITS.profile, (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  if (!name || name.length > 20) return res.status(400).json({ error: '收藏夹名称需为 1-20 字' });
+  if ((req.user.favoriteFolders || []).length >= 20) return res.status(400).json({ error: '收藏夹最多 20 个' });
+  if (req.user.favoriteFolders.some((f) => f.name === name)) return res.status(409).json({ error: '已有同名收藏夹' });
+  const folder = { id: Date.now(), name, createdAt: Date.now() };
+  req.user.favoriteFolders.push(folder);
+  db.save();
+  res.json({ folder: { ...folder, count: 0 } });
+});
+app.put('/api/me/folders/:id', auth, requireAuth, (req, res) => {
+  const f = (req.user.favoriteFolders || []).find((x) => x.id === Number(req.params.id));
+  if (!f) return res.status(404).json({ error: '收藏夹不存在' });
+  if (f.id === 0) return res.status(400).json({ error: '默认收藏夹不能重命名' });
+  const name = String((req.body || {}).name || '').trim();
+  if (!name || name.length > 20) return res.status(400).json({ error: '收藏夹名称需为 1-20 字' });
+  f.name = name;
+  db.save();
+  res.json({ ok: true });
+});
+app.delete('/api/me/folders/:id', auth, requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const f = (req.user.favoriteFolders || []).find((x) => x.id === id);
+  if (!f) return res.status(404).json({ error: '收藏夹不存在' });
+  if (id === 0) return res.status(400).json({ error: '默认收藏夹不能删除' });
+  // 其内容移入默认收藏夹，不丢数据
+  for (const pid of Object.keys(req.user.favMap)) {
+    if (req.user.favMap[pid] === id) req.user.favMap[pid] = 0;
+  }
+  req.user.favoriteFolders = req.user.favoriteFolders.filter((x) => x.id !== id);
+  db.save();
+  res.json({ ok: true });
+});
+// 我的收藏列表（分页，仅本人；收藏夹内容对他人完全不可见）
+app.get('/api/me/favorites', auth, requireAuth, (req, res) => {
+  const folderId = req.query.folderId === undefined ? null : Number(req.query.folderId);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(20, Number(req.query.limit) || 10);
+  let ids = Object.keys(req.user.favMap).map(Number);
+  if (folderId !== null) ids = ids.filter((pid) => req.user.favMap[pid] === folderId);
+  const posts = ids
+    .map((pid) => db.data.posts.find((x) => x.id === pid))
+    .filter(Boolean)
+    .sort((a, b) => b.id - a.id);
+  const slice = posts.slice((page - 1) * limit, page * limit);
+  res.json({
+    total: posts.length,
+    page,
+    posts: slice.map((x) => ({ ...postView(x, req.user), folderId: req.user.favMap[x.id] })),
+  });
+});
+
+// ========== 2.1 静音与隐藏（个人视图过滤） ==========
+
+app.post('/api/users/:id/mute', auth, requireAuth, (req, res) => {
+  const t = db.data.users.find((u) => u.id === Number(req.params.id));
+  if (!t) return res.status(404).json({ error: '用户不存在' });
+  if (t.id === req.user.id) return res.status(400).json({ error: '不能静音自己' });
+  if (!req.user.muted.includes(t.id)) req.user.muted.push(t.id);
+  db.save();
+  res.json({ ok: true, muted: true });
+});
+app.delete('/api/users/:id/mute', auth, requireAuth, (req, res) => {
+  req.user.muted = (req.user.muted || []).filter((id) => id !== Number(req.params.id));
+  db.save();
+  res.json({ ok: true, muted: false });
+});
+app.get('/api/me/muted', auth, requireAuth, (req, res) => {
+  res.json({ users: (req.user.muted || []).map((id) => publicUser(db.data.users.find((u) => u.id === id))).filter(Boolean) });
+});
+app.post('/api/posts/:id/hide-personal', auth, requireAuth, (req, res) => {
+  const pid = Number(req.params.id);
+  if (!db.data.posts.some((x) => x.id === pid)) return res.status(404).json({ error: '帖子不存在' });
+  if (!req.user.hiddenPosts.includes(pid)) req.user.hiddenPosts.push(pid);
+  db.save();
+  res.json({ ok: true });
+});
+app.delete('/api/posts/:id/hide-personal', auth, requireAuth, (req, res) => {
+  req.user.hiddenPosts = (req.user.hiddenPosts || []).filter((id) => id !== Number(req.params.id));
+  db.save();
+  res.json({ ok: true });
+});
+
+// 个人视图过滤：屏蔽 + 静音 + 个人隐藏（管理员不受限）
+function filterPersonal(list, me) {
+  if (!me || isAdmin(me)) return list;
+  return list.filter((x) => {
+    if ((me.muted || []).includes(x.userId)) return false;
+    if ((me.hiddenPosts || []).includes(x.id)) return false;
+    return true;
+  });
+}
+
+// ========== 2.1 隐私设置 ==========
+
+app.put('/api/me/settings', auth, requireAuth, (req, res) => {
+  const b = req.body || {};
+  const st = req.user.settings;
+  if (b.privateAccount !== undefined) st.privateAccount = !!b.privateAccount;
+  if (b.searchHistoryEnabled !== undefined) st.searchHistory = !!b.searchHistoryEnabled;
+  if (b.dmPolicy !== undefined) {
+    if (!['everyone', 'following'].includes(b.dmPolicy)) return res.status(400).json({ error: '私信策略参数不正确' });
+    st.dmPolicy = b.dmPolicy;
+  }
+  if (b.commentPolicy !== undefined) {
+    if (!['everyone', 'following'].includes(b.commentPolicy)) return res.status(400).json({ error: '评论策略参数不正确' });
+    st.commentPolicy = b.commentPolicy;
+  }
+  db.save();
+  res.json({ settings: st });
+});
+
+// ========== 2.1 通知中心 ==========
+
+app.get('/api/me/notifications', auth, requireAuth, (req, res) => {
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const limit = Math.min(50, Number(req.query.limit) || 20);
+  const mine = db.data.notifications
+    .filter((n) => n.userId === req.user.id)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const slice = mine.slice(offset, offset + limit).map((n) => {
+    const actor = db.data.users.find((u) => u.id === n.actorId);
+    const post = n.postId ? db.data.posts.find((x) => x.id === n.postId) : null;
+    return {
+      id: n.id,
+      type: n.type,
+      actor: publicUser(actor),
+      postTitle: post ? post.title : null,
+      postDeleted: !!n.postId && !post,
+      commentId: n.commentId,
+      text: n.text || '',
+      createdAt: n.createdAt,
+      read: !!n.readAt,
+    };
+  });
+  res.json({ total: mine.length, unread: mine.filter((n) => !n.readAt).length, items: slice });
+});
+app.post('/api/me/notifications/read', auth, requireAuth, (req, res) => {
+  const { ids, all } = req.body || {};
+  for (const n of db.data.notifications) {
+    if (n.userId !== req.user.id || n.readAt) continue;
+    if (all || (Array.isArray(ids) && ids.includes(n.id))) n.readAt = Date.now();
+  }
+  db.save();
+  res.json({ ok: true });
+});
+app.delete('/api/me/notifications/:id', auth, requireAuth, (req, res) => {
+  const n = db.data.notifications.find((x) => x.id === Number(req.params.id));
+  if (!n || n.userId !== req.user.id) return res.status(404).json({ error: '通知不存在' });
+  db.data.notifications = db.data.notifications.filter((x) => x.id !== n.id);
+  db.save();
+  res.json({ ok: true });
+});
+
+// /api/me/unread 合并通知未读数
+
+
+// ========== 2.1 统一搜索（用户 / 公开动态 / 话题） ==========
+
+app.get('/api/search', auth, LIMITS.search, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const type = ['posts', 'users', 'topics'].includes(req.query.type) ? req.query.type : 'posts';
+  const time = ['day', 'week', 'month', 'all'].includes(req.query.time) ? req.query.time : 'all';
+  const author = String(req.query.author || '').trim().toLowerCase();
+  const hasImage = req.query.hasImage === '1';
+  const sort = ['relevance', 'latest'].includes(req.query.sort) ? req.query.sort : 'latest';
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(20, Number(req.query.limit) || 10);
+  const kw = q.toLowerCase();
+  const cutoff = time === 'day' ? Date.now() - 86400e3 : time === 'week' ? Date.now() - 7 * 86400e3 : time === 'month' ? Date.now() - 30 * 86400e3 : 0;
+
+  if (type === 'users') {
+    if (!kw && !author) return res.json({ items: [], total: 0 });
+    const items = db.data.users
+      .filter((u) => {
+        if (u.id === (req.user && req.user.id)) return false;
+        if (u.status === 'banned') return false;
+        if (req.user && blockedPair(u, req.user)) return false;
+        const hay = (u.username + ' ' + u.nickname + ' ' + (u.bio || '')).toLowerCase();
+        if (kw && !hay.includes(kw)) return false;
+        if (author && !u.username.toLowerCase().includes(author)) return false;
+        return true;
+      })
+      .slice((page - 1) * limit, page * limit)
+      .map((u) => ({
+        ...publicUser(u),
+        username: u.username,
+        bio: u.bio || '',
+        interests: u.interests || [],
+        followerCount: db.data.users.filter((x) => (x.following || []).includes(u.id)).length,
+      }));
+    return res.json({ items, page });
+  }
+
+  if (type === 'topics') {
+    const agg = new Map();
+    for (const x of db.data.posts) {
+      if (x.status !== 'published' || x.visibility !== 'public' || x.hidden) continue;
+      if (!canViewPost(x, req.user)) continue;
+      for (const t of x.topics || []) {
+        if (kw && !t.toLowerCase().includes(kw)) continue;
+        const cur = agg.get(t) || { name: t, posts: 0, authors: new Set(), lastAt: 0 };
+        cur.posts += 1;
+        cur.authors.add(x.userId);
+        cur.lastAt = Math.max(cur.lastAt, x.createdAt);
+        agg.set(t, cur);
+      }
+    }
+    const items = [...agg.values()]
+      .map((t) => ({ name: t.name, posts: t.posts, authors: t.authors.size, lastAt: t.lastAt }))
+      .sort((a, b) => b.posts - a.posts)
+      .slice((page - 1) * limit, page * limit);
+    return res.json({ items, page });
+  }
+
+  // 动态搜索：canViewPost 统一可见性（私密账号/屏蔽/仅自己/草稿全部生效）
+  let pool = db.data.posts.filter((x) => {
+    if (x.status !== 'published') return false;
+    if (!canViewPost(x, req.user)) return false;
+    if (x.createdAt < cutoff) return false;
+    if (hasImage && !(x.images || []).length) return false;
+    if (author) {
+      const au = db.data.users.find((u) => u.id === x.userId);
+      if (!au || !au.username.toLowerCase().includes(author)) return false;
+    }
+    if (kw) {
+      const hit = x.title.toLowerCase().includes(kw) || x.content.toLowerCase().includes(kw) || (x.topics || []).some((t) => t.includes(kw));
+      if (!hit) return false;
+    }
+    return true;
+  });
+  let views = filterPersonal(pool, req.user).map((x) => ({ post: postView(x, req.user), score: 0 }));
+  if (kw && sort === 'relevance') {
+    for (const v of views) {
+      const t = v.post.title.toLowerCase(), c = v.post.content.toLowerCase();
+      v.score = (t.includes(kw) ? 3 : 0) + (c.includes(kw) ? 2 : 0) + v.post.likeCount * 0.1;
+    }
+    views.sort((a, b) => b.score - a.score || b.post.createdAt - a.post.createdAt);
+  } else {
+    views.sort((a, b) => b.post.createdAt - a.post.createdAt);
+  }
+  res.json({ items: views.slice((page - 1) * limit, page * limit).map((v) => v.post), page, total: views.length });
+});
+
+// ========== 2.1 话题 ==========
+
+// 热门/最新话题（热门：近 7 天，按独立作者数与互动计算，防单人多帖刷榜）
+app.get('/api/topics', auth, (req, res) => {
+  const sort = req.query.sort === 'new' ? 'new' : 'hot';
+  const cutoff = Date.now() - 7 * 86400e3;
+  const agg = new Map();
+  for (const x of db.data.posts) {
+    if (x.status !== 'published' || x.visibility !== 'public' || x.hidden) continue;
+    if (sort === 'hot' && x.createdAt < cutoff) continue;
+    if (!canViewPost(x, req.user)) continue;
+    const engagement = x.likes.length * 2 + db.data.comments.filter((c) => c.postId === x.id).length;
+    for (const t of x.topics || []) {
+      const cur = agg.get(t) || { name: t, posts: 0, authors: new Set(), score: 0, lastAt: 0 };
+      cur.posts += 1;
+      cur.authors.add(x.userId);
+      cur.score += 1 + engagement * 0.5;
+      cur.lastAt = Math.max(cur.lastAt, x.createdAt);
+      agg.set(t, cur);
+    }
+  }
+  const items = [...agg.values()].map((t) => ({ name: t.name, posts: t.posts, authors: t.authors.size, lastAt: t.lastAt }));
+  if (sort === 'hot') items.sort((a, b) => b.authors - a.authors || b.posts - a.posts);
+  else items.sort((a, b) => b.lastAt - a.lastAt);
+  res.json({ items: items.slice(0, 20) });
+});
+
+// 话题详情：相关公开动态（分页，遵循全部可见性规则）
+app.get('/api/topics/:name/posts', auth, (req, res) => {
+  const name = decodeURIComponent(String(req.params.name)).toLowerCase();
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(20, Number(req.query.limit) || 10);
+  const posts = db.data.posts
+    .filter((x) => x.status === 'published' && !x.hidden && (x.topics || []).includes(name) && canViewPost(x, req.user))
+    .sort((a, b) => b.createdAt - a.createdAt);
+  res.json({
+    total: posts.length,
+    page,
+    items: filterPersonal(posts.slice((page - 1) * limit, page * limit), req.user).map((x) => postView(x, req.user)),
+  });
+});
+
+// ========== 2.1 账号安全中心：会话管理 ==========
+
+const hashToken = (tk) => crypto.createHash('sha256').update(tk).digest('hex').slice(0, 12);
+
+app.get('/api/me/sessions', auth, requireAuth, (req, res) => {
+  const list = [];
+  for (const [tk, rec] of Object.entries(db.data.tokens)) {
+    if ((typeof rec === 'number' ? rec : rec.u) !== req.user.id) continue;
+    list.push({
+      id: hashToken(tk),
+      createdAt: typeof rec === 'number' ? Date.now() : rec.t || Date.now(), // v1 会话无时间记录，以当前时间兜底
+      ua: (typeof rec === 'number' ? '' : rec.ua) || '未知设备',
+      current: tk === req.token,
+    });
+  }
+  list.sort((a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0) || b.createdAt - a.createdAt);
+  res.json({ sessions: list });
+});
+app.delete('/api/me/sessions/:id', auth, requireAuth, (req, res) => {
+  if (req.params.id === hashToken(req.token)) return res.status(400).json({ error: '不能注销当前会话，请使用退出登录' });
+  for (const tk of Object.keys(db.data.tokens)) {
+    if ((typeof db.data.tokens[tk] === 'number' ? db.data.tokens[tk] : db.data.tokens[tk].u) === req.user.id && hashToken(tk) === req.params.id) {
+      delete db.data.tokens[tk];
+      db.save();
+      secLog('session_revoked', 'uid=' + req.user.id + ' sid=' + req.params.id);
+      return res.json({ ok: true });
+    }
+  }
+  res.status(404).json({ error: '会话不存在' });
+});
+app.post('/api/me/sessions/logout-others', auth, requireAuth, (req, res) => {
+  let n = 0;
+  for (const tk of Object.keys(db.data.tokens)) {
+    const rec = db.data.tokens[tk];
+    if ((typeof rec === 'number' ? rec : rec.u) === req.user.id && tk !== req.token) {
+      delete db.data.tokens[tk];
+      n += 1;
+    }
+  }
+  db.save();
+  secLog('sessions_logout_others', 'uid=' + req.user.id + ' revoked=' + n);
+  res.json({ ok: true, revoked: n });
+});
+
+// ========== 2.1 数据导出（仅本人数据；频控 3 次/小时；直接鉴权下载，无临时链接落盘） ==========
+
+app.get('/api/me/export', auth, requireAuth, mkLimiter(60 * 60e3, 3), (req, res) => {
+  const uid = req.user.id;
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    profile: {
+      id: req.user.id,
+      username: req.user.username,
+      nickname: req.user.nickname,
+      email: req.user.email,
+      bio: req.user.bio,
+      interests: req.user.interests,
+      settings: req.user.settings,
+      createdAt: req.user.createdAt,
+    },
+    posts: db.data.posts.filter((x) => x.userId === uid).map((x) => ({
+      id: x.id, board: x.board, title: x.title, content: x.content,
+      visibility: x.visibility, status: x.status, topics: x.topics,
+      images: x.images, createdAt: x.createdAt, views: x.views || 0, likes: x.likes.length,
+    })),
+    comments: db.data.comments.filter((c) => c.userId === uid).map((c) => ({
+      id: c.id, postId: c.postId, content: c.content, anonymous: !!c.anonymous, createdAt: c.createdAt,
+    })),
+    favorites: Object.entries(req.user.favMap).map(([pid, fid]) => ({
+      postId: Number(pid),
+      folder: (req.user.favoriteFolders.find((f) => f.id === fid) || {}).name || '默认收藏夹',
+    })),
+    drafts: db.data.posts.filter((x) => x.userId === uid && x.status === 'draft').map((x) => ({ id: x.id, title: x.title, content: x.content, createdAt: x.createdAt })),
+    following: (req.user.following || []).map((id) => (db.data.users.find((u) => u.id === id) || {}).username).filter(Boolean),
+  };
+  // 绝不包含：passwordHash / salt / tokens / 他人私信 / 他人资料
+  secLog('data_exported', 'uid=' + uid);
+  res.set('Content-Disposition', 'attachment; filename="dgchat-export-' + uid + '-' + new Date().toISOString().slice(0, 10) + '.json"');
+  res.json(payload);
+});
+
+// ========== 2.1 账号注销（验证密码；关联数据全清理；幂等保护） ==========
+app.post('/api/me/delete', auth, requireAuth, mkLimiter(60 * 60e3, 3), (req, res) => {
+  const { password, confirm } = req.body || {};
+  if (confirm !== 'DELETE') return res.status(400).json({ error: '请输入 DELETE 确认' });
+  if (db.hashPassword(String(password || ''), req.user.salt) !== req.user.passwordHash) {
+    secLog('account_delete_fail', 'uid=' + req.user.id);
+    return res.status(403).json({ error: '密码不正确' });
+  }
+  const uid = req.user.id;
+  // 1. 本人动态（含图片文件）与评论
+  const myPosts = db.data.posts.filter((x) => x.userId === uid);
+  for (const x of myPosts) {
+    for (const img of x.images || []) {
+      if (img.startsWith('/uploads/')) fs.rm(path.join(UPLOAD_DIR, img.replace('/uploads/', '')), { force: true }, () => {});
+    }
+  }
+  db.data.posts = db.data.posts.filter((x) => x.userId !== uid);
+  db.data.comments = db.data.comments.filter((c) => c.userId !== uid);
+  // 2. 社交关系双向清理
+  for (const u of db.data.users) {
+    u.following = (u.following || []).filter((id) => id !== uid);
+    u.blocked = (u.blocked || []).filter((id) => id !== uid);
+    u.muted = (u.muted || []).filter((id) => id !== uid);
+    u.followRequests = (u.followRequests || []).filter((id) => id !== uid);
+    delete u.favMap[uid];
+  }
+  // 3. 头像文件
+  removeAvatarFile(req.user.avatar);
+  // 4. 私信（双向删除：会话历史不留存）
+  db.data.messages = db.data.messages.filter((m) => m.fromId !== uid && m.toId !== uid);
+  // 5. 举报与通知
+  db.data.reports = db.data.reports.filter((r) => r.reporterId !== uid);
+  db.data.notifications = db.data.notifications.filter((n) => n.userId !== uid && n.actorId !== uid);
+  // 6. 会话全部吊销 + 移除用户
+  for (const tk of Object.keys(db.data.tokens)) {
+    const rec = db.data.tokens[tk];
+    if ((typeof rec === 'number' ? rec : rec.u) === uid) delete db.data.tokens[tk];
+  }
+  db.data.users = db.data.users.filter((u) => u.id !== uid);
+  db.data.adminLogs.push({
+    id: db.nextId('adminLog'),
+    adminId: uid,
+    action: 'account_self_deleted',
+    targetType: 'user',
+    targetId: uid,
+    note: '用户自助注销（无敏感凭据）',
+    at: Date.now(),
+  });
+  secLog('account_deleted', 'uid=' + uid);
+  db.save();
+  res.json({ ok: true });
+});
+
+// ========== 2.1 管理统计 v2（60 秒缓存，避免反复全量扫描） ==========
+
+let statsCache = { at: 0, data: null };
+app.get('/api/admin/stats', auth, requireAdmin, (req, res) => {
+  const days = Number(req.query.days) || 0;
+  const now = Date.now();
+  if (statsCache.data && now - statsCache.at < 60e3) {
+    const c = statsCache.data;
+    return res.json(recomputeStats(c.snapshot, days, now)); // 用缓存快照按范围重算，不重扫数据
+  }
+  const snapshot = {
+    users: db.data.users.map((u) => ({ id: u.id, createdAt: u.createdAt, status: u.status })),
+    posts: db.data.posts.map((x) => ({ userId: x.userId, createdAt: x.createdAt, status: x.status, hidden: !!x.hidden, likes: x.likes.length })),
+    comments: db.data.comments.filter((c) => !c.hidden).map((c) => ({ userId: c.userId, createdAt: c.createdAt })),
+    messages: db.data.messages.length,
+    views: db.data.posts.reduce((sum, x) => sum + (x.views || 0), 0),
+    drafts: db.data.posts.filter((x) => x.status === 'draft').length,
+    hidden: db.data.posts.filter((x) => x.hidden).length,
+    pendingReports: db.data.reports.filter((r) => r.status === 'pending').length,
+  };
+  statsCache = { at: now, data: { snapshot } };
+  res.json(recomputeStats(snapshot, days, now));
+});
+
+function recomputeStats(snap, days, now) {
+  const cutoff = days > 0 ? now - days * 86400e3 : 0;
+  const inRange = (ts) => ts >= cutoff;
+  const published = snap.posts.filter((x) => x.status === 'published');
+  // 近 7 天活跃用户：发布/评论过内容的真实去重用户
+  const weekAgo = now - 7 * 86400e3;
+  const active = new Set();
+  for (const x of snap.posts) if (x.createdAt > weekAgo) active.add(x.userId);
+  for (const c of snap.comments) if (c.createdAt > weekAgo) active.add(c.userId);
+  // 14 天注册与内容趋势
+  const trend = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now - i * 86400e3).toISOString().slice(0, 10);
+    const dStart = new Date(d + 'T00:00:00Z').getTime();
+    const dEnd = dStart + 86400e3;
+    trend.push({
+      date: d,
+      users: snap.users.filter((u) => u.createdAt >= dStart && u.createdAt < dEnd).length,
+      posts: snap.posts.filter((x) => x.createdAt >= dStart && x.createdAt < dEnd).length,
+      comments: snap.comments.filter((c) => c.createdAt >= dStart && c.createdAt < dEnd).length,
+    });
+  }
+  return {
+    days,
+    generatedAt: now,
+    users: { total: snap.users.length, new: snap.users.filter((u) => inRange(u.createdAt)).length, active7: active.size, banned: snap.users.filter((u) => u.status === 'banned').length },
+    posts: { total: published.length, new: published.filter((x) => inRange(x.createdAt)).length, drafts: snap.drafts, hidden: snap.hidden },
+    interactions: {
+      likes: published.reduce((sum, x) => sum + x.likes, 0),
+      comments: snap.comments.length,
+      messages: snap.messages,
+      views: snap.views,
+    },
+    pendingReports: snap.pendingReports,
+    trend,
+  };
+}
+
+app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version: '2.1.0', schema: db.SCHEMA_VERSION }));
 
 // 404（API）
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
