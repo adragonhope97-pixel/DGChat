@@ -4,6 +4,14 @@
 
 > Design philosophy: simple enough, fast enough, works out of the box. No framework, no build step, no database — clone it, `npm start`, and it runs.
 
+**Architecture**: the browser / PWA / mobile app all load the same single-page frontend and talk to the backend over a REST API; the backend persists everything (users, posts, comments, DMs, session tokens) into one JSON file, with images on disk under `uploads/`. The mobile apps package the same frontend via Capacitor and only point the API host at the computer's LAN IP — one change ships to all four platforms at once.
+
+**Design principles**:
+
+- **Zero-dependency mindset** — one JSON for data, static files served directly; backup = copy files, migration = copy folder
+- **Mobile-first interaction** — bottom three-tab navigation, bottom-sheet dialogs, safe-area adaptation; desktop automatically switches to centered card dialogs and a roomier layout
+- **Deterministic rendering** — dialogs use a translucent solid fill instead of backdrop-filter, eliminating the Chromium glass flicker; all motion is CSS easing, no JS animation libraries
+
 简体中文 | **English** | [繁體中文（臺灣）](README.zh-TW.md)
 
 ---
@@ -13,14 +21,14 @@
 ### Forum core
 - **Five boards**: Confessions, Second-hand Market, Lost & Found, Campus News, Free Talk
 - **Post / edit / delete**: with image upload (auto-compressed); authors and admins can edit or delete
-- **Comments & likes**: comment on the post detail page; like from cards or the detail page
+- **Comments & likes**: comment on the post detail page (**anonymous comments** supported); like from cards or the detail page
 - **Favorites**: saved posts are archived under "My Favorites" on your profile
 - **Search & sorting**: keyword search, plus Latest / Hottest sorting
 
 ### Social & accounts
 - **Sign up / log in**: username or email + password, with persistent sessions (token-based)
 - **Profile avatar**: upload after registering (auto center-cropped and compressed to 256px JPEG on the client)
-- **Direct messages**: one-on-one DMs with a conversation list, message thread, and unread badge
+- **Direct messages**: one-on-one DMs with a conversation list, message thread, and an unread badge (live unread count on the top-bar avatar)
 - **Profile page**: My Posts / My Favorites / My Likes, all in one place
 - **Admin**: account #1 is the site owner (admin) and can moderate all posts and comments
 
@@ -43,6 +51,50 @@
 | Visuals | [LiquidGlass-UI](https://github.com/hwyuanzi/LiquidGlass-UI) (Web Components, MIT) |
 | Mobile | Capacitor 8 (Android / iOS share the same web code) |
 | CI | GitHub Actions (automated Android APK / unsigned iOS IPA builds) |
+
+### Life of a request
+
+Take "creating a post" as an example: the frontend collects the form in `web/js/app.js` → sends `POST /api/posts` (multipart, with the session token) → `server/server.js` validates token and parameters → the post is added to the in-memory `db` object and written to `data/data.json`, while the image goes to `data/uploads/` via multer → the new post JSON returns → the frontend renders the card with its entrance animation. Every other action (comments, likes, DMs) follows the same path — backend changes happen in one file.
+
+---
+
+## 🛠 Customization & Secondary Development
+
+The project is deliberately structured as "change one place, the whole site follows" — common tweaks need no build tooling:
+
+| What to change | Where | Notes |
+| --- | --- | --- |
+| App name / title / footer tagline | `web/js/brand.js` | Single source for all copy; refresh to apply |
+| Boards (add / remove / rename) | `server/db.js` → `BOARDS` | Array order = board bar order; restart to apply |
+| Backgrounds & theme colors | add image to `web/assets/` + `BG_THEMES` in `web/js/app.js` | Each background carries its own HSL accent set; top bar / glass panels follow |
+| Glass look of dialogs/cards | `:root` design tokens at the top of `web/style.css` | blur / tint / sheen — everything parameterized |
+| Port / site name | env vars `PORT` / `APP_NAME` | or edit the defaults in `server/server.js` |
+| Seed accounts | `seed()` in `server/db.js` | Only created on first launch; wipe `data/` to regenerate |
+
+### Data backup & migration
+
+- All state lives in two places: `data/data.json` (business data) and `data/uploads/` (images). **Backup = copy these two paths on a schedule**, e.g. crontab: `0 3 * * * cp -r data /backup/dgchat-$(date +\%F)`.
+- Moving to a new computer / server: copy the whole project folder, `npm install`, start. Changing domain/IP only requires updating `nativeServerHost` in `brand.js` for the mobile apps.
+
+### Security notes
+
+- Passwords are stored as **scrypt hashes with a per-user random salt** (`server/db.js → hashPassword`) — no plaintext anywhere; sessions use random tokens that require re-login when expired.
+- The demo account passwords are public. **Before a real deployment**: wipe `data/data.json` to re-initialize, or at least change/remove the accounts in `seed()`.
+- The server speaks plain HTTP. For public deployment put Nginx / Caddy in front for HTTPS termination, and tighten CORS and upload limits (per-image limits already exist in `server.js`).
+- The admin is the account with id 1 — full moderation power. Treat its credentials like your server password.
+
+---
+
+## 🗺 Roadmap
+
+Planned improvements (in priority order) — nudge or claim them in Issues:
+
+- [ ] **Data-loss hardening**: atomic JSON writes (temp file + rename) + rolling daily backups — fixes data loss on abnormal power-off
+- [ ] **Realtime DMs**: upgrade polling to WebSocket
+- [ ] **iOS font-scaling adaptation**: parity with Android's `textZoom=100`
+- [ ] **Native status bar**: adopt `@capacitor/status-bar` for auto icon contrast on dark backgrounds
+- [ ] **Account enhancements**: password recovery (email codes), username changes
+- [ ] **Deployment docs**: Dockerfile and one-click cloud deployment script
 
 ---
 
