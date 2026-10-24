@@ -266,6 +266,7 @@ function postView(post, me) {
     favoriteCount: (post.favorites || []).length,
     favoritedByMe: !!me && (post.favorites || []).includes(me.id),
     commentCount,
+    topics: post.topics || [],
     visibility: post.visibility || 'public',
     status: post.status || 'published',
     views: post.views || 0,

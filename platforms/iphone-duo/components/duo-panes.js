@@ -48,6 +48,7 @@
                 <span class="duo-name">${p.author ? escapeHtml(p.author.nickname) : '匿名同学'}</span>
                 <span class="duo-time">${timeAgo(p.createdAt)}</span>
               </div>
+              ${(p.topics || []).length ? `<div class="duo-topics">${p.topics.map((t) => `<button class="duo-topic-chip" data-topic="${escapeHtml(t)}">#${escapeHtml(t)}</button>`).join('')}</div>` : ''}
               <div class="duo-title">${escapeHtml(p.title)}</div>
               <div class="duo-foot">${ICONS_FOOT(p.likeCount, p.commentCount)}</div>
             </div>
@@ -60,6 +61,7 @@
       return `
         <div class="duo-detail-head">
           <span class="duo-board-tag">${escapeHtml(p.boardName)}</span>
+          ${(p.topics || []).map((t) => `<button class="duo-topic-chip" data-topic="${escapeHtml(t)}">#${escapeHtml(t)}</button>`).join('')}
         </div>
         <h2 class="duo-detail-title">${escapeHtml(p.title)}</h2>
         <div class="duo-detail-author">
@@ -73,6 +75,8 @@
         <div class="duo-detail-actions">
           <button class="duo-btn" id="duoLike" data-id="${Number(p.id)}">${p.likedByMe ? '♥' : '♡'} ${Number(p.likeCount)}</button>
           <button class="duo-btn" id="duoFav" data-id="${Number(p.id)}">${p.favoritedByMe ? '★' : '☆'} ${Number(p.favoriteCount)}</button>
+          ${window.DuoAPI && DuoAPI.hasToken() ? `<button class="duo-btn" id="duoFavFolder">收藏夹</button>` : ''}
+          ${window.DuoAPI && DuoAPI.hasToken() && !p.isMine ? `<button class="duo-btn" id="duoHidePost">隐藏</button>` : ''}
         </div>
         <div class="duo-comments-title">评论（${Number(p.commentCount)}）</div>
         <div class="duo-comment-list">
@@ -88,6 +92,13 @@
             </div>`
             )
             .join('') || '<div class="duo-empty">还没有评论</div>'}
+        </div>
+        <div class="duo-comment-input">
+          <textarea id="duoCommentInput" rows="2" maxlength="2000" placeholder="友善评论…"></textarea>
+          <div class="duo-comment-acts">
+            <label class="duo-check"><input type="checkbox" id="duoCommentAnon" />匿名</label>
+            <button class="duo-btn" id="duoCommentSubmit">发送</button>
+          </div>
         </div>`;
     },
 
@@ -112,10 +123,13 @@
     // 消息气泡（聊天右栏）
     messageRow(m) {
       const recalled = m.recalled || m.content === null;
+      const canRecall = m.fromMe && !recalled && Date.now() - m.createdAt < 5 * 60e3;
+      const quote = m.replyTo ? `<div class="duo-msg-quote">引用 ${m.replyTo.fromMe ? '自己' : '对方'}：${escapeHtml(m.replyTo.preview)}</div>` : '';
       return `
         <div class="duo-msg ${m.fromMe ? 'mine' : 'theirs'}" data-id="${Number(m.id)}">
+          ${quote}
           <div class="duo-msg-bubble ${recalled ? 'recalled' : ''}">${recalled ? '<i>消息已撤回</i>' : escapeHtml(m.content)}</div>
-          <div class="duo-time">${timeAgo(m.createdAt)}</div>
+          <div class="duo-time">${timeAgo(m.createdAt)}${canRecall ? ` <button class="duo-msg-act" data-recall="${Number(m.id)}">撤回</button>` : ''}${!recalled && !m.fromMe ? ` <button class="duo-msg-act" data-reply="${Number(m.id)}">引用</button>` : ''}</div>
         </div>`;
     },
   };

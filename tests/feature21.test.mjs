@@ -151,6 +151,7 @@ test('话题：热门列表与话题详情（仅公开可见内容）', async ()
   assert.ok(hot.data.items.some((t) => t.name === '测试话题'));
   const detail = await jfetch('/api/topics/' + encodeURIComponent('测试话题') + '/posts', { token: C.token });
   assert.ok(detail.data.items.some((p) => p.id === postA.id));
+  assert.deepEqual(detail.data.items[0].topics, ['测试话题'], 'postView 必须带 topics（前端芯片渲染依赖）');
   assert.ok(detail.data.items.every((p) => p.id !== postB.id), '无话题的帖子不出现');
 });
 

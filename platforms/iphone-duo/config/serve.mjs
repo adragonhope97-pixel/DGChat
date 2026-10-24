@@ -61,7 +61,10 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/' || url.pathname === '') file = path.join(ROOT, 'index.html');
   fs.stat(file, (err, st) => {
     if (!err && st.isFile()) {
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+      res.writeHead(200, {
+        'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+        'Cache-Control': 'no-cache', // 开发预览：始终拿最新代码
+      });
       fs.createReadStream(file).pipe(res);
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

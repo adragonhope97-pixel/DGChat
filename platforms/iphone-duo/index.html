@@ -16,6 +16,11 @@
       <button class="duo-tab active" data-tab="posts" id="duoTabPosts">动态</button>
       <button class="duo-tab" data-tab="chat" id="duoTabChat">聊天<span class="duo-unread" id="duoUnread" hidden></span></button>
     </div>
+    <div class="duo-actions">
+      <button class="duo-icon" id="duoBtnSearch" title="搜索"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
+      <button class="duo-icon" id="duoBtnNotif" title="通知"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="duo-badge" id="duoNotifBadge" hidden></span></button>
+      <button class="duo-icon" id="duoBtnCompose" title="发帖"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
     <span class="duo-state-label" id="duoStateLabel"></span>
     <button class="duo-tab" id="duoLogout" hidden>退出</button>
   </header>
@@ -55,6 +60,10 @@
       <div class="duo-pane-scroll" id="duoMsgList">
         <div class="duo-empty">从左侧选择一个会话</div>
       </div>
+      <div class="duo-reply-bar" id="duoReplyBar" hidden>
+        <span id="duoReplyPreview"></span>
+        <button id="duoReplyCancel">✕</button>
+      </div>
       <div class="duo-input-bar">
         <textarea id="duoMsgInput" rows="1" maxlength="2000" placeholder="发消息…"></textarea>
         <button id="duoSend">发送</button>
@@ -62,10 +71,81 @@
     </section>
   </main>
 
+  <!-- 发帖 -->
+  <div class="duo-mask" id="duoComposeModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>发布动态</b><button class="duo-close" data-close="duoComposeModal">✕</button></div>
+      <form id="duoComposeForm">
+        <select id="duoComposeBoard" class="duo-field"></select>
+        <input id="duoComposeTitle" class="duo-field" type="text" maxlength="60" placeholder="标题（最多 60 字）" required />
+        <textarea id="duoComposeContent" class="duo-field" rows="5" maxlength="5000" placeholder="正文…用 #话题名# 可创建话题"></textarea>
+        <div class="duo-img-picker">
+          <div id="duoComposeThumbs" class="duo-thumbs"></div>
+          <label class="duo-btn small">＋ 图片<input id="duoComposeImg" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden /></label>
+        </div>
+        <div class="duo-row">
+          <select id="duoComposeVis" class="duo-field half"><option value="public">公开</option><option value="private">仅自己可见</option></select>
+          <label class="duo-check"><input type="checkbox" id="duoComposeAnon" />匿名</label>
+        </div>
+        <p class="duo-hint" id="duoComposeState"></p>
+        <p class="duo-error" id="duoComposeError" hidden></p>
+        <div class="duo-row">
+          <button type="button" class="duo-btn" id="duoComposeDraft">存草稿</button>
+          <button type="button" class="duo-btn primary" id="duoComposeSubmit">发 布</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 搜索 -->
+  <div class="duo-mask" id="duoSearchModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>搜索</b><button class="duo-close" data-close="duoSearchModal">✕</button></div>
+      <div class="duo-row">
+        <input id="duoSearchQuery" class="duo-field" type="search" maxlength="60" placeholder="用户 / 动态 / #话题#" />
+        <button class="duo-btn primary" id="duoSearchGo">搜索</button>
+      </div>
+      <div class="duo-row" id="duoSearchTabs">
+        <button class="duo-btn small duo-search-tab active" data-stab="posts">动态</button>
+        <button class="duo-btn small duo-search-tab" data-stab="users">用户</button>
+        <button class="duo-btn small duo-search-tab" data-stab="topics">话题</button>
+        <select id="duoSearchSort" class="duo-field half"><option value="latest">最新</option><option value="relevance">相关度</option></select>
+      </div>
+      <div id="duoSearchResults"></div>
+    </div>
+  </div>
+
+  <!-- 通知 -->
+  <div class="duo-mask" id="duoNotifModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>通知中心</b><button class="duo-btn small" id="duoNotifReadAll">全部已读</button><button class="duo-close" data-close="duoNotifModal">✕</button></div>
+      <div id="duoNotifList"></div>
+    </div>
+  </div>
+
+  <!-- 收藏到文件夹 -->
+  <div class="duo-mask" id="duoFolderModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>收藏到…</b><button class="duo-close" data-close="duoFolderModal">✕</button></div>
+      <div id="duoFolderList" class="duo-folder-list"></div>
+    </div>
+  </div>
+
+  <!-- 话题详情 -->
+  <div class="duo-mask" id="duoTopicModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b id="duoTopicName">#话题</b><button class="duo-close" data-close="duoTopicModal">✕</button></div>
+      <div id="duoTopicPosts"></div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
   <script src="config/duo.config.js"></script>
   <script src="src/window-state.js"></script>
   <script src="src/api.js"></script>
   <script src="components/duo-panes.js"></script>
   <script src="src/duo-app.js"></script>
+  <script src="src/duo-features.js"></script>
 </body>
 </html>

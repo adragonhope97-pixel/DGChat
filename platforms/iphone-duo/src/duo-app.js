@@ -4,7 +4,9 @@
 (function () {
   const state = {
     mode: 'single', // 'single' | 'dual'
-    tab: 'posts', // 'posts' | 'chat'
+    tab: 'posts',
+    threadMessages: [],
+    threadReplyTo: null, // 'posts' | 'chat'
     posts: [],
     postDetail: null, // 当前选中的动态（含 comments）
     convs: [],
@@ -93,6 +95,13 @@
         const r = await DuoAPI.favorite(id);
         $('#duoFav').textContent = `${r.favoritedByMe ? '★' : '☆'} ${r.favoriteCount}`;
       });
+      const favFolderBtn = $('#duoFavFolder');
+      if (favFolderBtn) favFolderBtn.addEventListener('click', () => window.DuoFeatures.openFolderPicker(id));
+      const cmtSubmit = $('#duoCommentSubmit');
+      if (cmtSubmit) cmtSubmit.addEventListener('click', () => window.DuoFeatures.submitComment(id));
+      $('#duoDetailBody').querySelectorAll('.duo-topic-chip').forEach((chip) =>
+        chip.addEventListener('click', () => window.DuoFeatures.openTopic(chip.dataset.topic))
+      );
     } catch (err) {
       $('#duoDetailBody').innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
     }
@@ -131,8 +140,31 @@
       const data = await DuoAPI.thread(uid);
       state.threadPartner = { id: uid, nickname: name };
       $('#duoThreadName').textContent = name;
+      state.threadMessages = data.messages;
       $('#duoMsgList').innerHTML =
-        data.messages.map(DuoPanes.messageRow).join('') || '<div class="duo-empty">还没有消息</div>';
+        data.messages.map((m) => DuoPanes.messageRow(m, Date.now())).join('') || '<div class="duo-empty">还没有消息</div>';
+      $('#duoMsgList').querySelectorAll('.duo-msg-act').forEach((b) => {
+        if (b.dataset.recall) {
+          b.addEventListener('click', async () => {
+            if (!confirm('撤回这条消息？')) return;
+            try {
+              await DuoAPI.call('/api/messages/' + b.dataset.recall + '/recall', { method: 'POST' });
+              await openThread(uid, name);
+            } catch (err) {
+              alert(err.message);
+            }
+          });
+        } else if (b.dataset.reply) {
+          b.addEventListener('click', () => {
+            const src = (state.threadMessages || []).find((m) => m.id === Number(b.dataset.reply));
+            if (!src) return;
+            state.threadReplyTo = { id: src.id, preview: (src.content || '').slice(0, 50) };
+            $('#duoReplyBar').hidden = false;
+            $('#duoReplyPreview').textContent = '引用对方：' + state.threadReplyTo.preview;
+            $('#duoMsgInput').focus();
+          });
+        }
+      });
       $('#duoMsgList').scrollTop = $('#duoMsgList').scrollHeight;
       if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
     } catch (err) {
@@ -145,9 +177,19 @@
     const content = input.value.trim();
     if (!content || !state.threadPartner) return;
     const clientId = Date.now() + '-' + Math.random().toString(36).slice(2, 8); // 幂等防重发
-    await DuoAPI.send(state.threadPartner.id, content, clientId);
-    input.value = '';
-    await openThread(state.threadPartner.id, state.threadPartner.nickname);
+    try {
+      await DuoAPI.call('/api/messages', {
+        method: 'POST',
+        body: { toUserId: state.threadPartner.id, content, clientId, replyTo: state.threadReplyTo ? state.threadReplyTo.id : undefined },
+      });
+      input.value = '';
+      state.threadReplyTo = null;
+      const bar = $('#duoReplyBar');
+      if (bar) bar.hidden = true;
+      await openThread(state.threadPartner.id, state.threadPartner.nickname);
+    } catch (err) {
+      alert((navigator.onLine === false ? '网络断开，消息已保留：' : '') + err.message);
+    }
   }
 
   // ---------- 登录 ----------
@@ -173,6 +215,17 @@
   }
 
   // ---------- 启动 ----------
+  window.DuoApp = {
+    reloadPosts: loadPosts,
+    reloadDetail: (id) => openPostDetail(id),
+    goPostsAndOpen: (id) => {
+      setTab('posts');
+      openPostDetail(id);
+      if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
+    },
+    goChat: () => setTab('chat'),
+  };
+
   document.addEventListener('DOMContentLoaded', async () => {
     applyLayout();
     window.addEventListener('resize', applyLayout);
@@ -211,6 +264,10 @@
         location.reload();
       });
       $('#duoSend').addEventListener('click', sendMsg);
+    $('#duoReplyCancel').addEventListener('click', () => {
+      state.threadReplyTo = null;
+      $('#duoReplyBar').hidden = true;
+    });
       $('#duoMsgInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();

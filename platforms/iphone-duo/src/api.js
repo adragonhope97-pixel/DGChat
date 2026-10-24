@@ -37,6 +37,7 @@
   }
 
   window.DuoAPI = {
+    call, // 通用调用（2.1 功能层使用）
     token,
     setToken,
     hasToken: () => !!token(),
