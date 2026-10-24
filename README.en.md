@@ -465,6 +465,24 @@ Found a bug or have a feature request? Email **gandragon1949@outlook.com**, or o
 
 > This project was conceived and shaped by A_Dragon, pair-programmed with ZCode: from the basic web forum to the full three-platform (Web / Android / iOS) delivery.
 
+### Open Source Acknowledgements
+
+This project stands on the shoulders of the following open-source projects — thanks to all authors and communities (full list and license notes in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)):
+
+| Project | Author / Maintainer | License | Link |
+| --- | --- | --- | --- |
+| Express | Express.js team (OpenJS Foundation) | MIT | [expressjs/express](https://github.com/expressjs/express) |
+| Multer | Express.js team | MIT | [expressjs/multer](https://github.com/expressjs/multer) |
+| Helmet | Evan Hahn & helmetjs community | MIT | [helmetjs/helmet](https://github.com/helmetjs/helmet) |
+| express-rate-limit | Created by Nathan Friedly, community maintained | MIT | [express-rate-limit/express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) |
+| Capacitor | Ionic team | MIT | [ionic-team/capacitor](https://github.com/ionic-team/capacitor) |
+| LiquidGlass-UI | hwyuanzi | MIT | [hwyuanzi/LiquidGlass-UI](https://github.com/hwyuanzi/LiquidGlass-UI) |
+| Gitleaks | Zachary Rice & gitleaks community | MIT | [gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) |
+| OSV-Scanner | Google OSV team | Apache-2.0 | [google/osv-scanner](https://github.com/google/osv-scanner) |
+| Semgrep | Semgrep (formerly r2c) team | LGPL-2.1 | [semgrep/semgrep](https://github.com/semgrep/semgrep) |
+
+Evaluated but not adopted (thanks anyway): [DOMPurify](https://github.com/cure53/DOMPurify) (Cure53 — no HTML injection sinks in this codebase), [DualPane](https://github.com/JoryShilmover/DualPane) (Jory Shilmover — incompatible with the Capacitor single-WebView architecture).
+
 ### Licensing & open source
 
 - **Fonts**: this project uses the system font stack (`-apple-system / PingFang SC / Microsoft YaHei`). For the Apple SF Pro look, place licensed font files in `web/assets/fonts/` and add `@font-face` rules (SF Pro is Apple proprietary; redistributing it requires complying with its license terms).
