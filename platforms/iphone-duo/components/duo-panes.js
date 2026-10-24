@@ -24,10 +24,13 @@
     return `${date.getMonth() + 1}月${date.getDate()}日`;
   }
 
+  // 原生 App 里相对路径（/uploads/...）会指向 capacitor://localhost —— 必须补全服务器地址
+  const absUrl = (u) => (u && u.startsWith('/') ? (window.DUO_API_BASE || '') + u : u);
+
   function avatarHtml(author) {
     if (!author) return '<div class="duo-avatar anon">匿</div>';
     if (author.avatar) {
-      return `<div class="duo-avatar"><img src="${escapeHtml(author.avatar)}" alt="" /></div>`;
+      return `<div class="duo-avatar"><img src="${escapeHtml(absUrl(author.avatar))}" alt="" /></div>`;
     }
     return `<div class="duo-avatar" style="background:${escapeHtml(author.avatarColor || '#4f8ef7')}">${escapeHtml((author.nickname || '?').slice(0, 1).toUpperCase())}</div>`;
   }

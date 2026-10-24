@@ -80,7 +80,7 @@ app.use(helmet({
   frameguard: { action: 'deny' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   crossOriginOpenerPolicy: { policy: 'same-origin' },
-  crossOriginResourcePolicy: { policy: 'same-site' }, // /uploads 图片只允许同站加载
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // /uploads 图片允许跨源嵌入（原生 App capacitor://localhost 加载头像必需）
   hsts: false, // 由下方中间件按 HTTPS 部署条件启用
   hidePoweredBy: true,
 }));

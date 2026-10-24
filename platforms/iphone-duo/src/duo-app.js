@@ -590,7 +590,7 @@
       if (av) {
         av.hidden = false;
         av.innerHTML = state.me.avatar
-          ? `<img src="${state.me.avatar}" alt="" />`
+          ? `<img src="${(window.DUO_API_BASE || '') + state.me.avatar}" alt="" />`
           : DuoPanes.escapeHtml(state.me.nickname.slice(0, 1).toUpperCase());
       }
       return true;
