@@ -1,7 +1,7 @@
 {
-  "name": "DGChat · 校园墙",
+  "name": "DGChat",
   "short_name": "DGChat",
-  "description": "校园墙 —— 校园论坛",
+  "description": "DGChat —— 校园论坛",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

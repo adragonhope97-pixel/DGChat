@@ -562,6 +562,7 @@ app.get('/api/conversations', auth, requireAuth, (req, res) => {
   const byPartner = new Map();
   for (const m of db.data.messages) {
     if (m.fromId !== myId && m.toId !== myId) continue;
+    if (m.fromId === myId && m.toId === myId) continue; // 备忘录单独渲染
     const partnerId = m.fromId === myId ? m.toId : m.fromId;
     const known = byPartner.get(partnerId);
     if (!known || known.createdAt < m.createdAt) byPartner.set(partnerId, m);
@@ -609,8 +610,10 @@ app.post('/api/messages', auth, requireAuth, (req, res) => {
   const { toUserId, content } = req.body || {};
   const partner = db.data.users.find((u) => u.id === Number(toUserId));
   if (!partner) return res.status(404).json({ error: '用户不存在' });
-  if (partner.id === req.user.id) return res.status(400).json({ error: '不能给自己发私信' });
-  if (blockedPair(partner, req.user)) return res.status(403).json({ error: '无法向该用户发送私信' });
+  // 发给自己 = 备忘录（单方面对话，只有自己可见）
+  if (partner.id !== req.user.id && blockedPair(partner, req.user)) {
+    return res.status(403).json({ error: '无法向该用户发送私信' });
+  }
   if (!content || !content.trim()) return res.status(400).json({ error: '内容不能为空' });
   if (content.length > 2000) return res.status(400).json({ error: '内容最多 2000 字' });
 

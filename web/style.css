@@ -1,4 +1,4 @@
-/* DGChat · 正德校园墙 —— 网页版样式
+/* DGChat —— 网页版样式
    风格：与 ZD 图标同款深海军蓝 + 蓝色渐变，iOS 质感
    动效：苹果式三阶贝塞尔缓动 cubic-bezier(0.32, 0.72, 0, 1)（iOS 弹层曲线）
    字体：SF Pro（苹果官方字体，子集化 woff2；中文回退系统字体） */
@@ -1263,6 +1263,14 @@ html.native-android .statusbar-space { height: 34px; }
   .modal, .modal.narrow { max-width: 520px; --lg-radius: 18px; margin: 0 auto; }
   .modal .modal-head h2 { font-size: 16px; }
   .msg-list { height: calc(100dvh - 300px); min-height: 160px; }
+}
+
+/* 备忘录会话（私信置顶的自己） */
+.memo-item .conv-inner { opacity: 0.96; }
+.memo-tag {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 999px; flex-shrink: 0;
+  background: rgba(120, 140, 220, 0.14); color: #9db0e8; border: 1px solid rgba(157, 176, 232, 0.35);
+  font-weight: 600; white-space: nowrap;
 }
 
 /* ============ 2.0 发现 / 举报 / 创作者 / 管理后台 ============ */

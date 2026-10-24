@@ -44,10 +44,10 @@ function makeUser(id, username, password, nickname, email, role = 'user') {
 // 首次启动时预置账号：1 号为站长（管理员），其余为演示账号
 function seed() {
   const users = [
-    makeUser(1, 'adragonhope97', '@nbGd94188', 'A_Dragon', 'adragonhope97@gmail.com', 'admin'),
-    makeUser(2, 'test', '123456', '测试同学', 'test@zhengde.edu.cn'),
-    makeUser(3, 'orange', '123456', '小橘子', 'orange@zhengde.edu.cn'),
-    makeUser(4, 'awei', '123456', '阿伟', 'awei@zhengde.edu.cn'),
+    makeUser(1, 'demo', 'demo123456', 'Demo', 'demo@example.edu', 'admin'),
+    makeUser(2, 'test', '123456', '测试同学', 'test@example.edu'),
+    makeUser(3, 'orange', '123456', '小橘子', 'orange@example.edu'),
+    makeUser(4, 'awei', '123456', '阿伟', 'awei@example.edu'),
   ];
 
   return {

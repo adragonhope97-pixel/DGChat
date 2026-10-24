@@ -903,8 +903,29 @@ async function loadConversations() {
   try {
     const data = await api('/conversations');
     const list = $('#convList');
-    $('#msgEmpty').hidden = data.conversations.length > 0;
-    list.innerHTML = data.conversations
+    // 备忘录：与自己的会话固定置顶，名字显示自己的昵称
+    const memoMsgs = (await api('/conversations/' + me.id)).messages;
+    const memoLast = memoMsgs[memoMsgs.length - 1];
+    const memoHtml = `
+      <liquid-glass class="conv-item memo-item" data-uid="${me.id}" interactive>
+        <div class="conv-inner">
+          ${
+            me.avatar
+              ? `<div class="avatar"><img src="${escapeHtml(absUrl(me.avatar))}" alt="" /></div>`
+              : `<div class="avatar" style="background:${me.avatarColor}">${escapeHtml(me.nickname.slice(0, 1).toUpperCase())}</div>`
+          }
+          <div class="conv-body">
+            <div class="conv-top">
+              <span class="conv-name">${escapeHtml(me.nickname)}${me.role === 'admin' ? '<span class="admin-tag">管理员</span>' : ''}</span>
+              <span class="conv-time">${memoLast ? timeAgo(memoLast.createdAt) : ''}</span>
+            </div>
+            <div class="conv-preview">${memoLast ? escapeHtml(memoLast.content) : '备忘录 · 记给自己的话，只有自己能看到'}</div>
+          </div>
+          <span class="memo-tag">备忘录</span>
+        </div>
+      </liquid-glass>`;
+    $('#msgEmpty').hidden = true;
+    list.innerHTML = memoHtml + data.conversations
       .map(
         (c) => `
       <liquid-glass class="conv-item" data-uid="${c.user.id}" interactive>
@@ -929,6 +950,7 @@ async function loadConversations() {
     list.querySelectorAll('.conv-item').forEach((el) => {
       el.addEventListener('click', () => openThread(Number(el.dataset.uid)));
     });
+    if (data.conversations.length === 0) $('#msgEmpty').hidden = false; // 无会话时保留空态
   } catch (err) {
     toast(err.message, 'error');
   }
