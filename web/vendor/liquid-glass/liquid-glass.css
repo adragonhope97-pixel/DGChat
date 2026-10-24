@@ -1,0 +1,150 @@
+/**
+ * LiquidGlass UI — Design Tokens & Optical Engine Variables
+ * ---------------------------------------------------------
+ * A single source of truth for the visual physics of the system.
+ * Every component reads from these custom properties, so the whole
+ * library can be re-themed by overriding a handful of variables.
+ *
+ * Override any token on :root, a wrapper element, or per-component
+ * (e.g. <liquid-glass-card style="--lg-blur: 18px">).
+ */
+
+:root {
+  /* ---- Motion -------------------------------------------------- */
+  /* A short decelerating response keeps controls calm and immediate. */
+  --lg-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --lg-duration: 0.24s;
+  --lg-duration-fast: 0.18s;
+
+  /* ---- Geometry ------------------------------------------------ */
+  --lg-radius: 24px;
+  --lg-radius-pill: 999px;
+  --lg-pad: 28px;
+
+  /* ---- Glass body --------------------------------------------- */
+  /* Low chroma and opacity let the surrounding content inform the material. */
+  --lg-tint: 255, 255, 255; /* RGB triplet, recombined below */
+  --lg-tint-strength: 0.075;
+  --lg-blur: 18px;
+  --lg-saturate: 135%;
+  --lg-brightness: 104%;
+  --lg-fallback-opacity: 0.88;
+
+  --lg-fill: linear-gradient(
+    155deg,
+    rgba(var(--lg-tint), calc(var(--lg-tint-strength) + 0.025)) 0%,
+    rgba(var(--lg-tint), var(--lg-tint-strength)) 55%,
+    rgba(var(--lg-tint), calc(var(--lg-tint-strength) - 0.02)) 100%
+  );
+
+  /* ---- Edges & specular highlights ---------------------------- */
+  --lg-border: rgba(255, 255, 255, 0.2);
+  --lg-rim: rgba(255, 255, 255, 0.34);
+  --lg-rim-low: rgba(255, 255, 255, 0.035);
+  --lg-specular: inset 0 1px 1px rgba(255, 255, 255, 0.32);
+  --lg-occlusion: inset 0 -1px 1px rgba(0, 0, 0, 0.16);
+  --lg-focus-ring: rgba(255, 255, 255, 0.92);
+
+  /* ---- Depth / ambient occlusion ------------------------------ */
+  --lg-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 10px 28px rgba(0, 0, 0, 0.16);
+
+  /* ---- Interactive (hover / focus) ---------------------------- */
+  --lg-hover-tint-strength: 0.105;
+  --lg-hover-border: rgba(255, 255, 255, 0.34);
+  --lg-hover-lift: -2px;
+  --lg-hover-scale: 1.003;
+  --lg-hover-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.12), 0 16px 38px rgba(0, 0, 0, 0.22);
+
+  /* ---- Static top sheen --------------------------------------- */
+  /* Strength of the fixed light pooling on the top of the pane (0–1). */
+  --lg-sheen: 0.1;
+
+  /* ---- Typography --------------------------------------------- */
+  --lg-font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  --lg-ink: #ffffff;
+  --lg-ink-soft: rgba(255, 255, 255, 0.76);
+}
+
+/* Context presets. Apply to a wrapper or an individual component. */
+.lg-on-light {
+  --lg-tint: 248, 250, 255;
+  --lg-tint-strength: 0.34;
+  --lg-border: rgba(255, 255, 255, 0.58);
+  --lg-rim: rgba(255, 255, 255, 0.72);
+  --lg-specular: inset 0 1px 1px rgba(255, 255, 255, 0.65);
+  --lg-occlusion: inset 0 -1px 1px rgba(26, 31, 44, 0.08);
+  --lg-shadow:
+    0 1px 3px rgba(33, 39, 52, 0.08), 0 12px 30px rgba(33, 39, 52, 0.12);
+  --lg-ink: #17191f;
+  --lg-ink-soft: rgba(23, 25, 31, 0.68);
+  --lg-focus-ring: rgba(0, 92, 230, 0.9);
+}
+
+.lg-clear {
+  --lg-tint-strength: 0.045;
+  --lg-border: rgba(255, 255, 255, 0.16);
+  --lg-sheen: 0.065;
+}
+
+.lg-tinted {
+  --lg-tint: 225, 231, 242;
+  --lg-tint-strength: 0.15;
+  --lg-saturate: 120%;
+}
+
+/* Optional utility for plain elements. */
+.lg-surface {
+  background: var(--lg-fill);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate))
+    brightness(var(--lg-brightness));
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate))
+    brightness(var(--lg-brightness));
+  border: 1px solid var(--lg-border);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-shadow), var(--lg-specular), var(--lg-occlusion);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .lg-surface {
+    background: rgba(var(--lg-tint), var(--lg-fallback-opacity));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --lg-duration: 0.001s;
+    --lg-duration-fast: 0.001s;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --lg-blur: 0px;
+    --lg-saturate: 100%;
+    --lg-brightness: 100%;
+    --lg-tint-strength: 0.88;
+    --lg-fallback-opacity: 0.96;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --lg-border: rgba(255, 255, 255, 0.58);
+    --lg-ink-soft: rgba(255, 255, 255, 0.92);
+  }
+}
+
+@media (forced-colors: active) {
+  .lg-surface {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

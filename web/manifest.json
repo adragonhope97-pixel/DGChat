@@ -1,0 +1,24 @@
+{
+  "name": "DGChat · 校园墙",
+  "short_name": "DGChat",
+  "description": "校园墙 —— 校园论坛",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1c3f",
+  "theme_color": "#0a1c3f",
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

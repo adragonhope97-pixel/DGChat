@@ -1,0 +1,18 @@
+{
+  "appId": "com.dgchat.app",
+  "appName": "DGChat",
+  "webDir": "web",
+  "backgroundColor": "#0a1c3f",
+  "server": {
+    "androidScheme": "http"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#0a1c3f"
+  },
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": true,
+    "backgroundColor": "#0a1c3f"
+  }
+}

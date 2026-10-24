@@ -1,0 +1,13 @@
+node_modules/
+data/
+*.log
+uploads/
+
+# Capacitor / iOS 构建产物
+ios/App/App/public/
+ios/App/build/
+ios/App/App/capacitor.config.json
+ios/DerivedData/
+*.ipa
+logs/
+dist/

@@ -1,0 +1,49 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 同步 Web 资源到 iOS 工程
+        run: npx cap sync ios
+
+      - name: 编译未签名 IPA（真机 arm64）
+        run: |
+          cd ios/App
+          xcodebuild -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: 打包 IPA
+        run: |
+          cd ios/App/build/Build/Products/Release-iphoneos
+          mkdir -p Payload
+          cp -r App.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/dgchat-unsigned.ipa" Payload
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dgchat-unsigned-ipa
+          path: dgchat-unsigned.ipa
+          retention-days: 30

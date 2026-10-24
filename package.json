@@ -1,0 +1,19 @@
+{
+  "name": "dgchat",
+  "version": "0.2.0",
+  "description": "DGChat（校园墙）—— 校园论坛（网页版，后续扩展安卓/iOS 共用同一套 API）",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "ios:sync": "npx cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "express": "^4.19.2",
+    "multer": "^2.4.0"
+  }
+}
