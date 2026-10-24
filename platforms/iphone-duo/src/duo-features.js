@@ -24,6 +24,9 @@
   const chart = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>';
   const bell = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
   const shield = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+  const heart = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+  const ban = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>';
+  const lock = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
   // ================= 通知中心 =================
   let notifTimer = null;
 
@@ -479,12 +482,7 @@
             .join('')}
         </div>
         <button class="duo-btn wide" id="duoLogoutOthers">退出其他所有设备</button>
-        <div class="duo-row" style="margin-top:12px">
-          <input id="duoPwdCur" class="duo-field" type="password" placeholder="当前密码" autocomplete="current-password" />
-          <input id="duoPwdNew" class="duo-field" type="password" placeholder="新密码（6-30 位）" autocomplete="new-password" />
-          <button class="duo-btn primary" id="duoPwdSave">修改密码</button>
-        </div>
-        <p class="duo-hint">修改密码后，其他设备将全部退出登录</p>`;
+        <p class="duo-hint" style="margin-top:10px">修改密码请使用「我的 → 修改密码」</p>`;
       body.querySelectorAll('[data-kill]').forEach((b) =>
         b.addEventListener('click', async () => {
           try {
@@ -501,18 +499,6 @@
         const r = await DuoAPI.call('/api/me/sessions/logout-others', { method: 'POST' });
         toast21(`已退出其他 ${r.revoked} 台设备`);
         openSecurity();
-      });
-      $('#duoPwdSave').addEventListener('click', async () => {
-        try {
-          await DuoAPI.call('/api/me/password', {
-            method: 'PUT',
-            body: { currentPassword: $('#duoPwdCur').value, newPassword: $('#duoPwdNew').value },
-          });
-          toast21('密码已修改，其他设备已退出');
-          closeModal('duoSecurityModal');
-        } catch (err) {
-          toast21(err.message);
-        }
       });
     } catch (err) {
       body.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
@@ -573,6 +559,219 @@
     }
   }
 
+
+
+  // ================= 我的粉丝 =================
+  async function openFollowers() {
+    openModal('duoUserModal');
+    const box = $('#duoUserBox');
+    box.innerHTML = '<div class="duo-sheet-head"><b>我的粉丝</b><button class="duo-close" data-close="duoUserModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="duo-empty">加载中…</div>';
+    box.querySelector('[data-close]').addEventListener('click', () => closeModal('duoUserModal'));
+    try {
+      const data = await DuoAPI.call('/api/me/followers');
+      box.innerHTML += data.users.length
+        ? data.users.map((u) => `
+          <div class="duo-notif">
+            ${DuoPanes.avatarHtml(u)}
+            <div class="duo-notif-body"><b>${esc(u.nickname)}</b><small>@${esc(u.username)}</small></div>
+            <button class="duo-btn small ${u.isFollowing ? '' : 'primary'}" data-fb="${Number(u.id)}">${u.isFollowing ? '已关注' : '回关'}</button>
+          </div>`).join('')
+        : '<div class="duo-empty">还没有粉丝</div>';
+      box.querySelectorAll('[data-fb]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          const r = await DuoAPI.call(`/api/users/${b.dataset.fb}/follow`, { method: 'POST' });
+          b.textContent = r.following ? '已关注' : '已申请';
+          toast21(r.following ? '已回关' : '已发送关注申请');
+        })
+      );
+    } catch (err) {
+      box.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+
+  // ================= 屏蔽管理 =================
+  async function openBlocked() {
+    openModal('duoUserModal');
+    const box = $('#duoUserBox');
+    box.innerHTML = '<div class="duo-sheet-head"><b>屏蔽管理</b><button class="duo-close" data-close="duoUserModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="duo-empty">加载中…</div>';
+    box.querySelector('[data-close]').addEventListener('click', () => closeModal('duoUserModal'));
+    try {
+      const data = await DuoAPI.call('/api/me/blocked');
+      box.innerHTML += data.users.length
+        ? data.users.map((u) => `
+          <div class="duo-notif">
+            ${DuoPanes.avatarHtml(u)}
+            <div class="duo-notif-body"><b>${esc(u.nickname)}</b><small>@${esc(u.username)} · 屏蔽中：互相不可见、不能私信</small></div>
+            <button class="duo-btn small" data-ub="${Number(u.id)}">取消屏蔽</button>
+          </div>`).join('')
+        : '<div class="duo-empty">没有屏蔽任何人</div>';
+      box.querySelectorAll('[data-ub]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          await DuoAPI.call(`/api/users/${b.dataset.ub}/block`, { method: 'DELETE' });
+          toast21('已取消屏蔽');
+          openBlocked();
+        })
+      );
+    } catch (err) {
+      box.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+
+  // ================= 修改密码（独立弹窗） =================
+  function openChangePwd() {
+    ['duoPwdCur', 'duoPwdNew', 'duoPwdNew2'].forEach((id) => (document.getElementById(id).value = ''));
+    $('#duoPwdError').hidden = true;
+    openModal('duoPwdModal');
+  }
+  $('#duoPwdSave').addEventListener('click', async () => {
+    const err = $('#duoPwdError');
+    err.hidden = true;
+    if ($('#duoPwdNew').value !== $('#duoPwdNew2').value) {
+      err.textContent = '两次输入的新密码不一致';
+      err.hidden = false;
+      return;
+    }
+    try {
+      await DuoAPI.call('/api/me/password', {
+        method: 'PUT',
+        body: { currentPassword: $('#duoPwdCur').value, newPassword: $('#duoPwdNew').value },
+      });
+      closeModal('duoPwdModal');
+      toast21('密码已修改，其他设备已退出登录');
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+    }
+  });
+
+  // ================= 管理后台（紧凑版：数据 / 举报 / 用户） =================
+  let adminSeg = 'stats';
+  async function openAdmin() {
+    openModal('duoAdminModal');
+    renderAdminShell();
+    loadAdminSeg();
+  }
+  function renderAdminShell() {
+    const box = $('#duoAdminBox');
+    box.innerHTML = `
+      <div class="duo-sheet-head"><b>管理后台</b><button class="duo-close" data-close="duoAdminModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="duo-seg">
+        <button class="duo-tab ${adminSeg === 'stats' ? 'active' : ''}" data-aseg="stats">运营数据</button>
+        <button class="duo-tab ${adminSeg === 'reports' ? 'active' : ''}" data-aseg="reports">举报处理</button>
+        <button class="duo-tab ${adminSeg === 'users' ? 'active' : ''}" data-aseg="users">用户管理</button>
+      </div>
+      <div id="duoAdminBody" style="max-height:55vh;overflow-y:auto"></div>`;
+    box.querySelector('[data-close]').addEventListener('click', () => closeModal('duoAdminModal'));
+    box.querySelectorAll('[data-aseg]').forEach((b) =>
+      b.addEventListener('click', () => {
+        adminSeg = b.dataset.aseg;
+        renderAdminShell();
+        loadAdminSeg();
+      })
+    );
+  }
+  async function loadAdminSeg() {
+    const body = $('#duoAdminBody');
+    body.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      if (adminSeg === 'stats') return renderAdminStats(body);
+      if (adminSeg === 'reports') return renderAdminReports(body);
+      return renderAdminUsers(body);
+    } catch (err) {
+      body.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+  async function renderAdminStats(body) {
+    const d = await DuoAPI.call('/api/admin/stats?days=7');
+    body.innerHTML = `
+      <div class="duo-me-stats">
+        <span><b>${Number(d.users.total)}</b>用户(${Number(d.users.new)}新增)</span>
+        <span><b>${Number(d.posts.total)}</b>动态(${Number(d.posts.new)}新增)</span>
+        <span><b>${Number(d.interactions.likes)}</b>点赞</span>
+      </div>
+      <div class="duo-me-stats">
+        <span><b>${Number(d.interactions.comments)}</b>评论</span>
+        <span><b>${Number(d.interactions.messages)}</b>私信</span>
+        <span><b>${Number(d.pendingReports)}</b>待处理举报</span>
+      </div>
+      <p class="duo-hint">近 7 天口径：新增=期间创建；点赞/评论/私信为累计 · ${new Date(Number(d.generatedAt)).toLocaleString('zh-CN')}</p>`;
+  }
+  const ADMIN_ACTIONS = [
+    ['dismiss', '忽略'], ['hide_post', '隐藏动态'], ['delete_post', '删除动态'],
+    ['delete_comment', '删除评论'], ['restrict_user', '限制账号'], ['ban_user', '封禁账号'],
+  ];
+  const ADMIN_DANGEROUS = ['delete_post', 'delete_comment', 'restrict_user', 'ban_user'];
+  async function renderAdminReports(body) {
+    const d = await DuoAPI.call('/api/admin/reports?status=pending');
+    if (!d.reports.length) {
+      body.innerHTML = '<div class="duo-empty">没有待处理的举报 🎉</div>';
+      return;
+    }
+    body.innerHTML = d.reports.map((r) => `
+      <div class="duo-notif" style="flex-direction:column;align-items:stretch">
+        <div><b>${esc(r.reason)}</b> · ${r.targetType === 'post' ? '帖子' : r.targetType === 'comment' ? '评论' : '用户'} · 举报人 ${esc(r.reporter ? r.reporter.nickname : '已注销')}</div>
+        <small>${esc(r.targetPreview)}${r.detail ? ' · ' + esc(r.detail) : ''}</small>
+        <div class="duo-row" style="margin:6px 0 0">
+          ${ADMIN_ACTIONS.filter(([a]) => {
+            if (r.targetType === 'post') return a !== 'delete_comment';
+            if (r.targetType === 'comment') return ['dismiss','delete_comment','restrict_user','ban_user'].includes(a);
+            return ['dismiss','restrict_user','ban_user'].includes(a);
+          }).map(([a, n]) => `<button class="duo-btn small ${ADMIN_DANGEROUS.includes(a) ? 'duo-danger' : ''}" data-rid="${Number(r.id)}" data-act="${a}">${n}</button>`).join('')}
+        </div>
+      </div>`).join('');
+    body.querySelectorAll('[data-rid]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const act = b.dataset.act;
+        if (ADMIN_DANGEROUS.includes(act) && !confirm('确认执行「' + b.textContent + '」？会记录管理日志')) return;
+        try {
+          const res = await DuoAPI.call(`/api/admin/reports/${b.dataset.rid}/handle`, { method: 'POST', body: { action: act, note: 'Duo 管理后台' } });
+          toast21(res.applied || '已处理');
+          loadAdminSeg();
+        } catch (e) {
+          toast21(e.message);
+        }
+      })
+    );
+  }
+  const ADMIN_STATUS = { active: '正常', restricted: '限制', banned: '封禁' };
+  async function renderAdminUsers(body) {
+    body.innerHTML = '<input id="duoAdminUserSearch" class="duo-field" type="search" placeholder="搜索用户名 / 昵称 / 邮箱" /><div id="duoAdminUserList"></div>';
+    const load = async () => {
+      const q = $('#duoAdminUserSearch').value.trim();
+      const d = await DuoAPI.call('/api/admin/users' + (q ? '?q=' + encodeURIComponent(q) : ''));
+      $('#duoAdminUserList').innerHTML = d.users.map((u) => `
+        <div class="duo-notif">
+          ${DuoPanes.avatarHtml(u)}
+          <div class="duo-notif-body"><b>${esc(u.nickname)}</b><small>@${esc(u.username)} · ${Number(u.postCount)} 帖 · ${ADMIN_STATUS[u.status] || '正常'}</small></div>
+          ${u.role === 'admin' ? '<span class="duo-hint">管理员</span>' : `
+          <select class="duo-field" style="width:auto;margin:0;padding:6px 8px" data-us="${Number(u.id)}">
+            <option value="active" ${u.status === 'active' ? 'selected' : ''}>正常</option>
+            <option value="restricted" ${u.status === 'restricted' ? 'selected' : ''}>限制</option>
+            <option value="banned" ${u.status === 'banned' ? 'selected' : ''}>封禁</option>
+          </select>`}
+        </div>`).join('');
+      $('#duoAdminUserList').querySelectorAll('[data-us]').forEach((sel) =>
+        sel.addEventListener('change', async () => {
+          if (sel.value !== 'active' && !confirm('改为「' + ADMIN_STATUS[sel.value] + '」？会吊销其全部登录会话')) {
+            return loadAdminSeg();
+          }
+          try {
+            await DuoAPI.call(`/api/admin/users/${sel.dataset.us}/status`, { method: 'POST', body: { status: sel.value, reason: 'Duo 管理后台' } });
+            toast21('已更新');
+            loadAdminSeg();
+          } catch (e) {
+            toast21(e.message);
+            loadAdminSeg();
+          }
+        })
+      );
+    };
+    $('#duoAdminUserSearch').addEventListener('input', () => {
+      clearTimeout(window.__duoAdminSearch);
+      window.__duoAdminSearch = setTimeout(load, 300);
+    });
+    await load();
+  }
 
   // ================= 兴趣标签编辑 =================
   let interestTags = [];
@@ -732,5 +931,5 @@
   // 暴露补充
 
   // 暴露给 duo-app.js 使用
-  window.DuoFeatures = { openFolderPicker, openTopic, submitComment, toast21, openPrivacy, openFavManager, openSecurity, openUser, openInterests, openCreator, openFollowing, useImageAsBackground, ICONS: { userPlus, users, folder, privacy, security, chart, bell, shield }, };
+  window.DuoFeatures = { openFolderPicker, openTopic, submitComment, toast21, openPrivacy, openFavManager, openSecurity, openUser, openInterests, openCreator, openFollowing, openFollowers, openBlocked, openChangePwd, openAdmin, useImageAsBackground, ICONS: { userPlus, users, folder, privacy, security, chart, bell, shield, heart, ban, lock }, };
 })();

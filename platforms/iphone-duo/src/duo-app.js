@@ -326,15 +326,20 @@
         </div>
         <div id="duoMeList"></div>
         <liquid-glass class="duo-item duo-tools-glass">
-          <div class="duo-tools">
+          <div class="duo-tools duo-tools-7">
             <button class="duo-tool" id="duoMeInterests">${DuoFeatures.ICONS.userPlus}兴趣标签</button>
-            <button class="duo-tool" id="duoMeFolders">${DuoFeatures.ICONS.folder}我的收藏</button>
             <button class="duo-tool" id="duoMeFollowing">${DuoFeatures.ICONS.users}关注列表</button>
+            <button class="duo-tool" id="duoMeFollowers">${DuoFeatures.ICONS.heart}我的粉丝</button>
+            <button class="duo-tool" id="duoMeBlocked">${DuoFeatures.ICONS.ban}屏蔽管理</button>
+            <button class="duo-tool" id="duoMePwd">${DuoFeatures.ICONS.lock}修改密码</button>
+            <button class="duo-tool" id="duoMeCreator">${DuoFeatures.ICONS.chart}创作者中心</button>
+            ${state.me.role === 'admin' ? `<button class="duo-tool admin" id="duoMeAdmin">${DuoFeatures.ICONS.shield}管理后台</button>` : ''}
+          </div>
+          <div class="duo-tools duo-tools-4">
+            <button class="duo-tool" id="duoMeFolders">${DuoFeatures.ICONS.folder}我的收藏</button>
             <button class="duo-tool" id="duoMePrivacy">${DuoFeatures.ICONS.privacy}隐私与互动</button>
             <button class="duo-tool" id="duoMeSecurity">${DuoFeatures.ICONS.security}账号安全</button>
-            <button class="duo-tool" id="duoMeCreator">${DuoFeatures.ICONS.chart}创作者中心</button>
             <button class="duo-tool" id="duoMeNotif">${DuoFeatures.ICONS.bell}通知中心</button>
-            ${state.me.role === 'admin' ? `<button class="duo-tool admin" id="duoMeCreatorAdmin">${DuoFeatures.ICONS.shield}创作者中心</button>` : ''}
           </div>
         </liquid-glass>
         <liquid-glass class="duo-item duo-bg-card">
@@ -356,6 +361,11 @@
       $('#duoMeInterests').addEventListener('click', () => window.DuoFeatures.openInterests());
       $('#duoMeFolders').addEventListener('click', () => window.DuoFeatures.openFavManager());
       $('#duoMeFollowing').addEventListener('click', () => window.DuoFeatures.openFollowing());
+      $('#duoMeFollowers').addEventListener('click', () => window.DuoFeatures.openFollowers());
+      $('#duoMeBlocked').addEventListener('click', () => window.DuoFeatures.openBlocked());
+      $('#duoMePwd').addEventListener('click', () => window.DuoFeatures.openChangePwd());
+      const adminBtn = $('#duoMeAdmin');
+      if (adminBtn) adminBtn.addEventListener('click', () => window.DuoFeatures.openAdmin());
       $('#duoMePrivacy').addEventListener('click', () => window.DuoFeatures.openPrivacy());
       $('#duoMeSecurity').addEventListener('click', () => window.DuoFeatures.openSecurity());
       $('#duoMeCreator').addEventListener('click', () => window.DuoFeatures.openCreator());

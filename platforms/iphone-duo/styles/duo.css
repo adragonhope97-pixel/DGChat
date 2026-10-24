@@ -408,3 +408,14 @@ body[data-duo-mode='single'] .duo-pane.pane-exit {
   body[data-duo-mode='single'] .duo-pane.pane-enter,
   body[data-duo-mode='single'] .duo-pane.pane-exit { animation: none; }
 }
+
+/* ---------- 我的页工具矩阵：第一排 7 / 第二排 4 ---------- */
+.duo-tools-7 { grid-template-columns: repeat(7, 1fr); }
+.duo-tools-4 { grid-template-columns: repeat(4, 1fr); margin-top: 8px; }
+.duo-tools-7 .duo-tool { padding: 10px 2px; font-size: 10.5px; gap: 4px; }
+.duo-tools-7 .duo-tool svg { width: 16px; height: 16px; }
+@media (min-width: 600px) {
+  .duo-tools-7 .duo-tool { font-size: 12px; padding: 12px 4px; }
+}
+.duo-admin-sheet { width: min(560px, 100%); }
+.duo-danger { color: #ff8a95; border-color: rgba(230,110,120,0.4); }

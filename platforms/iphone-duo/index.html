@@ -244,6 +244,24 @@
   <!-- 背景上传 -->
   <input type="file" id="duoBgUpload" accept="image/jpeg,image/png,image/webp" hidden />
 
+  <!-- 修改密码 -->
+  <div class="duo-mask" id="duoPwdModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>修改密码</b><button class="duo-close" data-close="duoPwdModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <input id="duoPwdCur" class="duo-field" type="password" placeholder="当前密码" autocomplete="current-password" />
+      <input id="duoPwdNew" class="duo-field" type="password" placeholder="新密码（6-30 位）" autocomplete="new-password" />
+      <input id="duoPwdNew2" class="duo-field" type="password" placeholder="确认新密码" autocomplete="new-password" />
+      <p class="duo-error" id="duoPwdError" hidden></p>
+      <p class="duo-hint">修改成功后，其他设备将全部退出登录</p>
+      <button class="duo-btn primary wide" id="duoPwdSave">确认修改</button>
+    </div>
+  </div>
+
+  <!-- 管理后台 -->
+  <div class="duo-mask" id="duoAdminModal" hidden>
+    <div class="duo-sheet duo-admin-sheet" id="duoAdminBox"></div>
+  </div>
+
   <div class="toast-wrap" id="toastWrap"></div>
 
   <script src="config/duo.config.js"></script>
