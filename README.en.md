@@ -288,6 +288,10 @@ Full fields and behavior live in `server/server.js` (commented).
 
 ## 📄 Notes
 
+### Feedback & Contact
+
+Found a bug or have a feature request? Email **gandragon1949@outlook.com**, or open an [Issue](https://github.com/adragonhope97-pixel/DGChat/issues).
+
 ### Credits
 
 | Role | Member |
