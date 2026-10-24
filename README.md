@@ -288,6 +288,10 @@ DGChat/
 
 ## 📄 说明
 
+### 反馈与联系
+
+发现 bug 或有功能建议？欢迎发邮件到 **gandragon1949@outlook.com**，或在 [Issues](https://github.com/adragonhope97-pixel/DGChat/issues) 页面提交。
+
 ### 制作名单
 
 | 角色 | 成员 |
