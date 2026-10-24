@@ -110,6 +110,78 @@
 
 ---
 
+## 🧑‍💻 导入 VS Code 开发
+
+### 1. 把项目拿到本地
+
+**方式 A：git 克隆（推荐，方便以后拉更新）**
+
+```bash
+git clone https://github.com/adragonhope97-pixel/DGChat.git
+cd DGChat
+```
+
+**方式 B：直接下载压缩包**
+
+打开仓库首页 → 绿色 **Code** 按钮 → **Download ZIP** → 解压到任意目录（路径建议不含中文和空格，例如 `D:\projects\DGChat`）。
+
+### 2. 用 VS Code 打开
+
+- 启动 VS Code → **文件 → 打开文件夹**（File → Open Folder）→ 选中 `DGChat` 根目录（注意是根目录，不是某个子文件夹）。
+- 或者更省事：在项目文件夹里右键 →「通过 Code 打开」（安装 VS Code 时勾选了该选项即可），或在 VS Code 终端里执行 `code .`。
+- 首次打开如果弹出「是否信任此文件夹的作者」，点 **是，我信任**（本地自建项目）。
+
+### 3. 安装依赖
+
+VS Code 里按 <kbd>Ctrl</kbd>+<kbd>`</kbd>（反引号，Tab 上面那个键）打开**集成终端**，执行：
+
+```bash
+npm install
+```
+
+> 前提是已安装 Node.js（≥ 18）：终端里运行 `node -v` 能打印版本号即可。没装的话去 [nodejs.org](https://nodejs.org) 下载 LTS 版安装后**重启 VS Code**。
+
+### 4. 一键启动（两种方式任选）
+
+**方式 A：调试模式（可打断点，推荐开发时用）**
+
+1. 仓库自带调试配置，按 <kbd>F5</kbd>（或左侧「运行和调试」面板 → 顶部的绿色 ▶）。
+2. 底部终端会打印 `已启动：http://localhost:3000`。
+3. 在 `server/server.js` 的任意行号左侧点击可以打**断点**，请求打过来时会自动停住，可以逐行查看变量——这是调后端最方便的方式。
+
+**方式 B：普通终端运行**
+
+```bash
+npm start        # 普通启动
+npm run dev      # 开发模式：改了后端代码自动重启
+```
+
+### 5. 修改与实时预览
+
+- **后端**（`server/` 下的文件）：用 `npm run dev` 或 F5（配置里带 `restart: true`），保存后自动重启生效。
+- **前端**（`web/` 下的文件）：**无需重启**，保存后直接刷新浏览器就能看到。若改动没生效，强制刷新（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>）清掉浏览器缓存。
+- 浏览器访问 `http://localhost:3000`，改一个地方刷新一下，即时看到效果。
+
+### 6. 推荐的 VS Code 扩展（可选）
+
+| 扩展 | 作用 |
+| --- | --- |
+| Live Server | 静态页热重载（本项目后端托管静态文件，一般用不到，改纯前端时可选） |
+| ESLint / Prettier | 代码风格与格式化 |
+| 中文语言包 | 界面中文化（仓库的 `.vscode/extensions.json` 已预置推荐，打开项目时 VS Code 会自动提示安装） |
+
+### 7. 常见问题
+
+| 问题 | 解决 |
+| --- | --- |
+| <kbd>F5</kbd> 没反应 / 报找不到 node | 没装 Node.js 或装完没重启 VS Code |
+| 终端 `npm install` 很慢 | 换国内镜像：`npm config set registry https://registry.npmmirror.com` 后重试 |
+| 端口被占用 | 终端运行 `PORT=3001 npm start` 换端口（Windows PowerShell 用 `$env:PORT=3001; npm start`） |
+| 改了 CSS/JS 看不到变化 | 强制刷新浏览器；确认改的是 `web/` 目录下的文件而不是构建产物 |
+| 想重置所有数据 | 停止服务 → 删除 `data/` 文件夹 → 重新启动 |
+
+---
+
 ## 🚀 快速开始
 
 ```bash
