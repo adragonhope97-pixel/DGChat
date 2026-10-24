@@ -14,7 +14,16 @@
     $('#' + id).hidden = true;
   }
   window.DuoClose = closeModal;
+  window.DuoOpen = openModal;
 
+  const userPlus = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+  const users = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+  const folder = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  const privacy = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  const security = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
+  const chart = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>';
+  const bell = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+  const shield = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
   // ================= 通知中心 =================
   let notifTimer = null;
 
@@ -561,6 +570,164 @@
     }
   }
 
+
+  // ================= 兴趣标签编辑 =================
+  let interestTags = [];
+  async function openInterests() {
+    try {
+      const data = await DuoAPI.me();
+      interestTags = [...(data.user.interests || [])];
+      renderTags();
+      openModal('duoInterestsModal');
+    } catch (err) {
+      toast21(err.message);
+    }
+  }
+  function renderTags() {
+    $('#duoTagEditor').innerHTML = interestTags.length
+      ? interestTags.map((t, i) => `<span class="duo-topic-chip static">${esc(t)}<button class="duo-tag-del" data-i="${i}">×</button></span>`).join('')
+      : '<span class="duo-hint">还没有添加</span>';
+    $('#duoTagEditor').querySelectorAll('.duo-tag-del').forEach((b) =>
+      b.addEventListener('click', () => {
+        interestTags.splice(Number(b.dataset.i), 1);
+        renderTags();
+      })
+    );
+  }
+  $('#duoTagAdd').addEventListener('click', () => {
+    const v = $('#duoTagInput').value.trim();
+    if (!v) return;
+    if (v.length > 12) return toast21('单个标签最多 12 字');
+    if (interestTags.length >= 8) return toast21('最多 8 个');
+    if (interestTags.includes(v)) return toast21('已添加过');
+    interestTags.push(v);
+    $('#duoTagInput').value = '';
+    renderTags();
+  });
+  $('#duoTagSave').addEventListener('click', async () => {
+    try {
+      await DuoAPI.call('/api/me/profile', { method: 'PUT', body: { interests: interestTags } });
+      closeModal('duoInterestsModal');
+      toast21('兴趣标签已保存');
+      window.DuoApp.renderMe && window.DuoApp.renderMe();
+    } catch (err) {
+      toast21(err.message);
+    }
+  });
+
+  // ================= 创作者中心（真实统计 + 草稿） =================
+  async function openCreator() {
+    openModal('duoCreatorModal');
+    const box = $('#duoCreatorBox');
+    box.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      const data = await DuoAPI.call('/api/me/creator');
+      box.innerHTML = `
+        <div class="duo-sheet-head"><b>创作者中心</b><button class="duo-close" data-close="duoCreatorModal">✕</button></div>
+        <div class="duo-me-stats">
+          <span><b>${Number(data.totals.views)}</b>浏览</span>
+          <span><b>${Number(data.totals.likes)}</b>获赞</span>
+          <span><b>${Number(data.totals.comments)}</b>评论</span>
+        </div>
+        <p class="duo-hint">口径：浏览量=非作者打开详情页次数；获赞/评论为累计值</p>
+        ${data.drafts.length ? '<div class="duo-name" style="margin:8px 0">草稿（' + data.drafts.length + '）</div>' + data.drafts.map((d) => `
+          <div class="duo-notif">
+            <div class="duo-notif-body"><b>${esc(d.title)}</b><small>${esc(d.boardName)} · 草稿</small></div>
+            <button class="duo-btn small" data-pub="${Number(d.id)}">发布</button>
+            <button class="duo-btn small" data-edit="${Number(d.id)}">编辑</button>
+          </div>`).join('') : ''}
+        <div class="duo-name" style="margin:8px 0">已发布（${data.posts.length}）</div>
+        ${data.posts.length ? data.posts.map((x) => `
+          <div class="duo-notif">
+            <div class="duo-notif-body"><b>${esc(x.title)}</b><small>${esc(x.boardName)} · 浏览 ${Number(x.views)} · 赞 ${Number(x.likes)} · 评论 ${Number(x.comments)}${x.visibility === 'private' ? ' · 仅自己' : ''}</small></div>
+          </div>`).join('') : '<div class="duo-empty">还没有发布过动态</div>'}`;
+      box.querySelector('[data-close]').addEventListener('click', () => closeModal('duoCreatorModal'));
+      box.querySelectorAll('[data-pub]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          try {
+            const cur = await DuoAPI.post(Number(b.dataset.pub));
+            const fd = new FormData();
+            fd.append('title', cur.post.title);
+            fd.append('content', cur.post.content);
+            fd.append('existingImages', JSON.stringify(cur.post.images || []));
+            fd.append('publish', 'true');
+            await DuoAPI.call(`/api/posts/${b.dataset.pub}`, { method: 'PUT', body: fd });
+            toast21('草稿已发布');
+            openCreator();
+          } catch (err) {
+            toast21(err.message);
+          }
+        })
+      );
+      box.querySelectorAll('[data-edit]').forEach((b) =>
+        b.addEventListener('click', () => {
+          closeModal('duoCreatorModal');
+          window.DuoApp.openEdit(Number(b.dataset.edit));
+        })
+      );
+    } catch (err) {
+      box.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+
+  // ================= 关注列表 =================
+  async function openFollowing() {
+    openModal('duoUserModal');
+    const box = $('#duoUserBox');
+    box.innerHTML = '<div class="duo-sheet-head"><b>关注列表</b><button class="duo-close" data-close="duoUserModal">✕</button></div><div class="duo-empty">加载中…</div>';
+    try {
+      const data = await DuoAPI.call('/api/me/following');
+      box.innerHTML += data.users.length
+        ? data.users.map((u) => `
+          <div class="duo-notif">
+            ${DuoPanes.avatarHtml(u)}
+            <div class="duo-notif-body"><b>${esc(u.nickname)}</b><small>@${esc(u.username)} · ${Number(u.followerCount)} 粉丝</small></div>
+            <button class="duo-btn small" data-unfollow="${Number(u.id)}">取关</button>
+          </div>`).join('')
+        : '<div class="duo-empty">还没有关注任何人</div>';
+      box.querySelector('[data-close]').addEventListener('click', () => closeModal('duoUserModal'));
+      box.querySelectorAll('[data-unfollow]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          await DuoAPI.call(`/api/users/${b.dataset.unfollow}/follow`, { method: 'DELETE' });
+          toast21('已取消关注');
+          openFollowing();
+        })
+      );
+    } catch (err) {
+      box.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+
+  // ================= 自定义背景上传（压缩后本地存储） =================
+  function compressImage(file, maxW = 1600) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => reject(new Error('图片读取失败'));
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  async function useImageAsBackground(file) {
+    try {
+      const dataUrl = await compressImage(file);
+      localStorage.setItem('duo_bg', JSON.stringify({ id: 'custom', url: dataUrl }));
+      window.DuoApp.applyBg && window.DuoApp.applyBg();
+      window.DuoApp.renderBgPicker && window.DuoApp.renderBgPicker();
+      toast21('自定义背景已应用');
+    } catch (err) {
+      toast21(err.message || '图片处理失败');
+    }
+  }
+
+  // 暴露补充
+
   // 暴露给 duo-app.js 使用
-  window.DuoFeatures = { openFolderPicker, openTopic, submitComment, toast21, openPrivacy, openFavManager, openSecurity, openUser };
+  window.DuoFeatures = { openFolderPicker, openTopic, submitComment, toast21, openPrivacy, openFavManager, openSecurity, openUser, openInterests, openCreator, openFollowing, useImageAsBackground, ICONS: { userPlus, users, folder, privacy, security, chart, bell, shield }, };
 })();

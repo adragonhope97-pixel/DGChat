@@ -37,21 +37,29 @@
     timeAgo,
     avatarHtml,
 
-    // 动态卡片（左栏列表项）
-    postCard(p) {
+    // 动态卡片（列表项；mine=1 时显示板块标签与编辑/删除）
+    postCard(p, mine) {
+      const acts =
+        p.canDelete
+          ? `<span class="duo-card-acts">
+               ${p.canEdit ? `<button class="duo-card-btn" data-act="edit" data-id="${Number(p.id)}" title="编辑">✎</button>` : ''}
+               <button class="duo-card-btn" data-act="del" data-id="${Number(p.id)}" title="${p.isMine ? '删除' : '管理员删除'}">🗑</button>
+             </span>`
+          : '';
       return `
         <liquid-glass class="duo-item duo-post-card" data-id="${Number(p.id)}" interactive>
           <div class="duo-item-inner">
             ${avatarHtml(p.author)}
             <div class="duo-item-body">
               <div class="duo-item-top">
-                <span class="duo-name">${p.author ? escapeHtml(p.author.nickname) : '匿名同学'}</span>
+                <span class="duo-name">${p.author ? escapeHtml(p.author.nickname) : '匿名同学'}${p.isMine ? '<span class="duo-admin-tag">我</span>' : ''}</span>
                 <span class="duo-time">${timeAgo(p.createdAt)}</span>
               </div>
               ${(p.topics || []).length ? `<div class="duo-topics">${p.topics.map((t) => `<button class="duo-topic-chip" data-topic="${escapeHtml(t)}">#${escapeHtml(t)}</button>`).join('')}</div>` : ''}
               <div class="duo-title">${escapeHtml(p.title)}</div>
-              <div class="duo-foot">${ICONS_FOOT(p.likeCount, p.commentCount)}</div>
+              <div class="duo-foot"><span class="duo-board-tag">${escapeHtml(p.boardName)}</span>${p.visibility === 'private' ? '<span class="duo-board-tag">仅自己</span>' : ''}${p.status === 'draft' ? '<span class="duo-board-tag">草稿</span>' : ''}${ICONS_FOOT(p.likeCount, p.commentCount, p.favoriteCount)}</div>
             </div>
+            ${acts}
           </div>
         </liquid-glass>`;
     },
@@ -134,7 +142,7 @@
     },
   };
 
-  function ICONS_FOOT(likes, comments) {
-    return `<span>♥ ${Number(likes)}</span><span>💬 ${Number(comments)}</span>`;
+  function ICONS_FOOT(likes, comments, favorites) {
+    return `<span>♥ ${Number(likes)}</span><span>💬 ${Number(comments)}</span><span>☆ ${Number(favorites || 0)}</span>`;
   }
 })();

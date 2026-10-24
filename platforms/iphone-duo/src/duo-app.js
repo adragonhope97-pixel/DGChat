@@ -90,15 +90,69 @@
   }
 
   // ---------- 数据渲染 ----------
+  // 集中卡片交互绑定（列表/我的/发现/搜索/话题/收藏夹共用）
+  function bindCards(container) {
+    container.querySelectorAll('.duo-post-card').forEach((el) =>
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.duo-card-btn') || e.target.closest('.duo-topic-chip')) return;
+        const tab = state.tab;
+        openPostDetail(Number(el.dataset.id));
+        if (state.mode === 'single' && (tab === 'posts' || tab === 'me' || tab === 'discover')) document.body.dataset.duoPane = 'detail';
+      })
+    );
+    container.querySelectorAll('.duo-card-btn').forEach((b) =>
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = Number(b.dataset.id);
+        if (b.dataset.act === 'edit') return openEditPost(id);
+        if (b.dataset.act === 'del') {
+          if (!confirm('确定删除这条动态吗？评论也会一并删除。')) return;
+          try {
+            await DuoAPI.call(`/api/posts/${id}`, { method: 'DELETE' });
+            window.DuoFeatures.toast21('已删除');
+            b.closest('.duo-item').remove();
+          } catch (err) {
+            window.DuoFeatures.toast21(err.message);
+          }
+        }
+      })
+    );
+    container.querySelectorAll('.duo-topic-chip').forEach((chip) =>
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.DuoFeatures.openTopic(chip.dataset.topic);
+      })
+    );
+  }
+
+  // 编辑动态：复用发帖弹窗（保留原图，仅改文字与可见性）
+  let editingPostId = null;
+  async function openEditPost(id) {
+    try {
+      const data = await DuoAPI.post(id);
+      if (!data.post.canEdit) return window.DuoFeatures.toast21('只能编辑自己的动态');
+      editingPostId = id;
+      const boards = (await DuoAPI.boards()).boards;
+      $('#duoComposeBoard').innerHTML = boards.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+      $('#duoComposeBoard').value = data.post.board;
+      $('#duoComposeTitle').value = data.post.title;
+      $('#duoComposeContent').value = data.post.content;
+      $('#duoComposeVis').value = data.post.visibility || 'public';
+      $('#duoComposeSheetTitle').textContent = '编辑动态';
+      $('#duoComposeSubmit').textContent = '保存修改';
+      $('#duoComposeDraft').hidden = true;
+      window.DuoOpen('duoComposeModal');
+    } catch (err) {
+      window.DuoFeatures.toast21(err.message);
+    }
+  }
   async function loadPosts() {
     try {
       const data = await DuoAPI.posts('sort=latest');
       state.posts = data.posts;
       $('#duoPostList').innerHTML =
-        data.posts.map(DuoPanes.postCard).join('') || '<div class="duo-empty">还没有动态</div>';
-      $('#duoPostList').querySelectorAll('.duo-post-card').forEach((el) =>
-        el.addEventListener('click', () => openPostDetail(Number(el.dataset.id)))
-      );
+        data.posts.map((x) => DuoPanes.postCard(x, true)).join('') || '<div class="duo-empty">还没有动态</div>';
+      bindCards($('#duoPostList'));
     } catch (err) {
       $('#duoPostList').innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
     }
@@ -217,56 +271,139 @@
     }
   }
 
-  // ---------- 我的（个人主页） ----------
+  // ---------- 我的（个人主页，对齐主站功能矩阵） ----------
+  let meSection = 'mine';
   async function renderMe() {
     const body = $('#duoMeBody');
     body.innerHTML = '<div class="duo-empty">加载中…</div>';
     try {
       const [meData, stats] = await Promise.all([DuoAPI.me(), DuoAPI.call('/api/me/stats')]);
       state.me = meData.user;
-      const mine = await DuoAPI.posts('mine=1&sort=latest');
+      const adminTag = state.me.role === 'admin' ? '<span class="duo-admin-tag">管理员</span>' : '';
+      const interests = state.me.interests || [];
       body.innerHTML = `
         <liquid-glass class="duo-item duo-me-card">
           <div class="duo-item-inner">
             ${DuoPanes.avatarHtml(state.me)}
             <div class="duo-item-body">
-              <div class="duo-name">${DuoPanes.escapeHtml(state.me.nickname)}${state.me.role === 'admin' ? ' <span class="duo-admin-tag">管理员</span>' : ''}</div>
+              <div class="duo-name">${DuoPanes.escapeHtml(state.me.nickname)} ${adminTag}</div>
               <div class="duo-preview">@${DuoPanes.escapeHtml(state.me.username)}${state.me.email ? ' · ' + DuoPanes.escapeHtml(state.me.email) : ''}</div>
             </div>
           </div>
           <div class="duo-me-stats">
             <span><b>${stats.posts}</b>帖子</span><span><b>${stats.likesReceived}</b>获赞</span>
-            <span><b>${stats.followers}</b>粉丝</span><span><b>${stats.following}</b>关注</span>
+            <span><b>${stats.favorites}</b>收藏</span><span><b>${stats.followers}</b>粉丝</span><span><b>${stats.following}</b>关注</span>
+          </div>
+          ${interests.length ? `<div class="duo-topics">${interests.map((i) => `<span class="duo-topic-chip static">${DuoPanes.escapeHtml(i)}</span>`).join('')}</div>` : '<div class="duo-hint">还没有兴趣标签，点下方「兴趣标签」添加来匹配同学</div>'}
+        </liquid-glass>
+        <div class="duo-seg duo-me-seg">
+          <button class="duo-tab ${meSection === 'mine' ? 'active' : ''}" data-mesec="mine">我的帖子</button>
+          <button class="duo-tab ${meSection === 'liked' ? 'active' : ''}" data-mesec="liked">赞过</button>
+          <button class="duo-tab ${meSection === 'fav' ? 'active' : ''}" data-mesec="fav">收藏</button>
+        </div>
+        <div id="duoMeList"></div>
+        <liquid-glass class="duo-item duo-tools-glass">
+          <div class="duo-tools">
+            <button class="duo-tool" id="duoMeInterests">${DuoFeatures.ICONS.userPlus}兴趣标签</button>
+            <button class="duo-tool" id="duoMeFolders">${DuoFeatures.ICONS.folder}我的收藏</button>
+            <button class="duo-tool" id="duoMeFollowing">${DuoFeatures.ICONS.users}关注列表</button>
+            <button class="duo-tool" id="duoMePrivacy">${DuoFeatures.ICONS.privacy}隐私与互动</button>
+            <button class="duo-tool" id="duoMeSecurity">${DuoFeatures.ICONS.security}账号安全</button>
+            <button class="duo-tool" id="duoMeCreator">${DuoFeatures.ICONS.chart}创作者中心</button>
+            <button class="duo-tool" id="duoMeNotif">${DuoFeatures.ICONS.bell}通知中心</button>
+            ${state.me.role === 'admin' ? `<button class="duo-tool admin" id="duoMeCreatorAdmin">${DuoFeatures.ICONS.shield}创作者中心</button>` : ''}
           </div>
         </liquid-glass>
-        <div class="duo-tools">
-          <button class="duo-tool" id="duoMeFolders">${TOOL_ICONS.folders}我的收藏</button>
-          <button class="duo-tool" id="duoMePrivacy">${TOOL_ICONS.privacy}隐私与互动</button>
-          <button class="duo-tool" id="duoMeSecurity">${TOOL_ICONS.security}账号安全</button>
-          <button class="duo-tool" id="duoMeLogout">${TOOL_ICONS.logout}退出登录</button>
-        </div>
-        <div class="duo-pane-head" style="border:none;padding-left:2px">我的帖子（${mine.posts.length}）</div>
-        ${mine.posts.map(DuoPanes.postCard).join('') || '<div class="duo-empty">还没有发过动态</div>'}`;
-      body.querySelectorAll('.duo-post-card').forEach((el) =>
-        el.addEventListener('click', () => {
-          setTab('posts');
-          openPostDetail(Number(el.dataset.id));
-          if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
+        <liquid-glass class="duo-item duo-bg-card">
+          <div class="duo-pane-head" style="border:none;padding:0 0 8px">背景</div>
+          <div class="duo-bg-row" id="duoBgRow"></div>
+          <input type="file" id="duoBgUpload" accept="image/jpeg,image/png,image/webp" hidden />
+        </liquid-glass>
+        <button class="duo-btn duo-logout wide" id="duoMeLogout">退出登录</button>`;
+      // 分类列表
+      loadMeList();
+      $$('#duoMeBody [data-mesec]').forEach((b) =>
+        b.addEventListener('click', () => {
+          meSection = b.dataset.mesec;
+          $$('#duoMeBody [data-mesec]').forEach((x) => x.classList.toggle('active', x === b));
+          loadMeList();
         })
       );
+      // 工具入口
+      $('#duoMeInterests').addEventListener('click', () => window.DuoFeatures.openInterests());
       $('#duoMeFolders').addEventListener('click', () => window.DuoFeatures.openFavManager());
+      $('#duoMeFollowing').addEventListener('click', () => window.DuoFeatures.openFollowing());
       $('#duoMePrivacy').addEventListener('click', () => window.DuoFeatures.openPrivacy());
       $('#duoMeSecurity').addEventListener('click', () => window.DuoFeatures.openSecurity());
+      $('#duoMeCreator').addEventListener('click', () => window.DuoFeatures.openCreator());
+      $('#duoMeNotif').addEventListener('click', () => document.getElementById('duoBtnNotif').click());
       $('#duoMeLogout').addEventListener('click', async () => {
+        if (!confirm('确定退出登录？')) return;
         try { await DuoAPI.logout(); } catch {}
         DuoAPI.setToken('');
         location.reload();
       });
+      renderBgPicker();
     } catch (err) {
       body.innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
     }
   }
 
+  async function loadMeList() {
+    const list = $('#duoMeList');
+    list.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      const key = meSection;
+      const data = await DuoAPI.posts(`${key === 'mine' ? 'mine' : key}=1&sort=latest`);
+      list.innerHTML = data.posts.map((x) => DuoPanes.postCard(x, key === 'mine')).join('') || '<div class="duo-empty">这里还什么都没有</div>';
+      bindCards(list);
+    } catch (err) {
+      list.innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ---------- 背景（5 预设 + 自定义上传，独立存储 duo_bg） ----------
+  const BG_PRESETS = [
+    { id: 'default', name: '波纹', url: 'assets/bg.jpg' },
+    { id: 'aurora', name: '极光', url: 'assets/bg-aurora.jpg' },
+    { id: 'sunset', name: '暮色', url: 'assets/bg-sunset.jpg' },
+    { id: 'forest', name: '翡翠', url: 'assets/bg-forest.jpg' },
+    { id: 'obsidian', name: '曜石', url: 'assets/bg-obsidian.jpg' },
+  ];
+  function applyDuoBg() {
+    try {
+      const pref = JSON.parse(localStorage.getItem('duo_bg') || 'null');
+      const url = pref ? pref.url : BG_PRESETS[0].url;
+      document.body.style.backgroundImage = `linear-gradient(rgba(10,22,46,0.72), rgba(10,22,46,0.78)), url("${url}")`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundAttachment = 'fixed';
+    } catch {}
+  }
+  function renderBgPicker() {
+    const row = $('#duoBgRow');
+    if (!row) return;
+    let pref = null;
+    try { pref = JSON.parse(localStorage.getItem('duo_bg') || 'null'); } catch {}
+    row.innerHTML = BG_PRESETS.map(
+      (x) => `<button class="duo-bg-tile ${(!pref || pref.id === x.id) ? 'active' : ''}" data-bg="${x.id}"><img src="${x.url}" alt="${x.name}" /></button>`
+    ).join('') + '<button class="duo-bg-tile duo-bg-add" id="duoBgAdd">＋</button>';
+    row.querySelectorAll('[data-bg]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const p = BG_PRESETS.find((x) => x.id === b.dataset.bg);
+        localStorage.setItem('duo_bg', JSON.stringify({ id: p.id, url: p.url }));
+        applyDuoBg();
+        renderBgPicker();
+        window.DuoFeatures.toast21('背景已切换：' + p.name);
+      })
+    );
+    $('#duoBgAdd').addEventListener('click', () => $('#duoBgUpload').click());
+    $('#duoBgUpload').onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      window.DuoFeatures.useImageAsBackground(file);
+    };
+  }
   // ---------- 发现 ----------
   let discoverSeg = 'recommend';
   async function renderDiscover() {
@@ -365,6 +502,13 @@
       state.me = data.user;
       $('#duoLogin').hidden = true;
       $('#duoApp').hidden = false;
+      const av = $('#duoTopAvatar');
+      if (av) {
+        av.hidden = false;
+        av.innerHTML = state.me.avatar
+          ? `<img src="${state.me.avatar}" alt="" />`
+          : DuoPanes.escapeHtml(state.me.nickname.slice(0, 1).toUpperCase());
+      }
       return true;
     } catch {
       DuoAPI.setToken('');
@@ -389,6 +533,10 @@
       openThread(uid, name);
       if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
     },
+    openEdit: openEditPost,
+    renderMe,
+    renderBgPicker,
+    applyBg: applyDuoBg,
   };
 
   document.addEventListener('DOMContentLoaded', async () => {

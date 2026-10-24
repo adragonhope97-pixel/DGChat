@@ -289,3 +289,77 @@ body:has(.duo-tabbar) .duo-stage { height: calc(100% - 52px - var(--duo-safe-top
 .duo-tag-current { font-size: 10px; background: rgba(90,190,130,0.15); color: #7fd4a0; border-radius: 6px; padding: 1px 6px; }
 .duo-folder-del { color: #ff8a95; cursor: pointer; }
 .duo-field-label { font-size: 12px; color: var(--duo-text-3); display: block; margin-bottom: 4px; }
+
+/* ---------- 2.1 我的页完整矩阵 / 顶栏搜索头像 / 大胶囊底栏 ---------- */
+.duo-top-search {
+  flex: 1; max-width: 220px; height: 32px; border-radius: 999px; margin-left: 8px;
+  border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.07);
+  color: var(--duo-text); padding: 0 14px; font-size: 13px; outline: none;
+}
+.duo-top-search:focus { border-color: var(--duo-accent); }
+.duo-top-avatar { width: 30px; height: 30px; font-size: 13px; cursor: pointer; }
+.duo-top-avatar:hover { border-color: var(--duo-accent); }
+
+/* 底栏：透明大胶囊容器 + 有色小滑块 */
+.duo-tab-pill {
+  position: relative; display: flex; align-items: center; gap: 2px;
+  padding: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.18);
+  width: 100%;
+}
+.duo-tabbar { padding: 8px 14px calc(8px + var(--duo-safe-bottom)); }
+.duo-tab-pill .duo-tab { flex: 1; padding: 8px 4px; font-size: 13px; text-align: center; }
+.duo-tab-pill .duo-tab-ind {
+  top: 4px; bottom: 4px; left: 8px; width: 60px;
+  background: color-mix(in srgb, var(--duo-accent) 78%, #fff 6%);
+  border: none;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--duo-accent) 55%, transparent), inset 0 1px 1px rgba(255,255,255,0.35);
+}
+.duo-tab-pill .duo-tab.active { color: #fff; font-weight: 600; }
+
+/* 我的页统计 5 列 */
+.duo-me-stats { display: flex; justify-content: space-around; padding: 12px 4px 6px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 12px; }
+
+/* 内容分类 seg */
+.duo-me-seg { margin: 12px 0; }
+
+/* 工具玻璃容器 */
+.duo-tools-glass { display: block; padding: 12px; }
+.duo-tools-glass .duo-tools { margin: 0; }
+
+/* 卡片右上角操作 */
+.duo-card-acts { display: flex; flex-direction: column; gap: 6px; }
+.duo-card-btn {
+  width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.07); color: var(--duo-text);
+  font-size: 13px; line-height: 1;
+}
+.duo-card-btn:hover { border-color: var(--duo-accent); color: var(--duo-accent); }
+
+/* 背景瓷砖 */
+.duo-bg-card { display: block; padding: 14px; }
+.duo-bg-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.duo-bg-tile {
+  width: 56px; height: 56px; border-radius: 12px; overflow: hidden; cursor: pointer; padding: 0;
+  border: 2px solid transparent; position: relative;
+}
+.duo-bg-tile img { width: 100%; height: 100%; object-fit: cover; }
+.duo-bg-tile.active { border-color: var(--duo-accent); box-shadow: 0 0 12px color-mix(in srgb, var(--duo-accent) 55%, transparent); }
+.duo-bg-add {
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  border: 1px dashed rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); color: var(--duo-text-3);
+}
+
+/* 兴趣编辑 */
+.duo-tag-editor { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; min-height: 34px; }
+.duo-tag-del { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 3px; }
+
+/* 退出按钮 */
+.duo-logout { margin: 16px 0 8px; color: #ff8a95; border-color: rgba(230,110,120,0.4); background: rgba(220,70,80,0.1); }
+
+/* 话题 chip 静态（不可点） */
+.duo-topic-chip.static { cursor: default; }
