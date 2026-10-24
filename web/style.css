@@ -1,8 +1,45 @@
-/* DGChat · 校园墙 —— 网页版样式
+/* DGChat · 正德校园墙 —— 网页版样式
    风格：与 ZD 图标同款深海军蓝 + 蓝色渐变，iOS 质感
    动效：苹果式三阶贝塞尔缓动 cubic-bezier(0.32, 0.72, 0, 1)（iOS 弹层曲线）
-   字体：系统字体栈（-apple-system / PingFang SC / 微软雅黑） */
+   字体：SF Pro（苹果官方字体，子集化 woff2；中文回退系统字体） */
 
+/* ---------- SF Pro 网页字体 ----------
+   仅含拉丁字符子集（约 35KB/字重），中文自动回退到 PingFang SC / 微软雅黑 */
+@font-face {
+  font-family: "SF Pro Web";
+  src: url("assets/fonts/SF-Pro-Text-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "SF Pro Web";
+  src: url("assets/fonts/SF-Pro-Text-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "SF Pro Web";
+  src: url("assets/fonts/SF-Pro-Text-Semibold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "SF Pro Web";
+  src: url("assets/fonts/SF-Pro-Display-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "SF Pro Web";
+  src: url("assets/fonts/SF-Pro-Display-Heavy.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --bg: #0a1c3f;
@@ -32,7 +69,7 @@
   --lg-rim: rgba(255, 255, 255, 0.32);
   --lg-sheen: 0.06;
   --lg-shadow: 0 2px 8px rgba(3, 10, 26, 0.22), 0 10px 30px rgba(3, 10, 26, 0.18);
-  --lg-font: -apple-system, BlinkMacSystemFont, "PingFang SC",
+  --lg-font: "SF Pro Web", -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Microsoft YaHei", "Segoe UI", sans-serif;
 }
 
@@ -63,7 +100,7 @@ button, .tab-btn, .chip, .foot-btn, .sort-btn, .close-btn, .seg-btn, .auth-tab, 
 ::selection { background: rgba(var(--accent-rgb), 0.35); }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: "SF Pro Web", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   background-color: #081733;
   color: var(--text);
   line-height: 1.6;
@@ -1145,7 +1182,6 @@ html.native .offline-mask { padding-top: 80px; }
   .tabbar { width: calc(100% - 20px); }
   .modal { --lg-pad: 18px 16px max(24px, env(safe-area-inset-bottom)); }
   .post-images.grid { gap: 5px; }
-}
   /* iOS 聚焦输入框时若字号 <16px 会自动放大页面，破坏 App 手感 */
   .field input, .field textarea, .field select,
   .comment-input-bar textarea, .msg-input-bar textarea, .search-box input {
