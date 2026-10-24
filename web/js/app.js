@@ -1254,6 +1254,16 @@ window.addEventListener('load', () => {
   placeFloating();
 });
 
+// ---------- 可视视口（VP）----------
+// 键盘弹出 / 浏览器工具栏收起 / 旋转屏幕时，visualViewport 的高度才是真正可见区域
+const VP = { w: window.innerWidth, h: window.innerHeight };
+function readViewport() {
+  VP.w = window.innerWidth;
+  VP.h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+}
+readViewport();
+if (window.visualViewport) window.visualViewport.addEventListener('resize', readViewport);
+
 // ---------- 浮动元素锚定可视区域 ----------
 // 实时读取当前窗口高度（分辨率变化 / 软键盘弹出 / 旋转屏幕都会触发 resize）
 // 来放置底栏和加号按钮，保证任何标签页、任何设备下位置一致。
