@@ -1,5 +1,7 @@
 # DGChat 🐉
 
+简体中文 | [English](README.en.md) | [繁體中文（臺灣）](README.zh-TW.md)
+
 **DGChat** 是一个开箱即用的校园论坛（校园墙）应用：一套代码，同时覆盖 **Web / PWA / Android / iOS** 四种形态。后端为零数据库依赖的 Node.js + Express（JSON 文件存储），前端为原生 HTML/CSS/JS 单页应用，配合「液态玻璃」视觉风格与多主题背景系统。
 
 > 设计理念：足够简洁、足够快、开箱即用。没有框架、没有构建步骤、没有数据库 —— 克隆下来 `npm start` 就能跑。
