@@ -1492,3 +1492,17 @@ html.native-android .statusbar-space { height: 34px; }
 }
 
 /* 隐私/安全中心复用现有组件，无新增布局 */
+
+/* ---------- 私信线程切换过渡：右滑入 / 左滑出（全端一致） ---------- */
+#messagesView { position: relative; }
+#threadView.th-in { animation: threadSlideIn 0.42s var(--ease-ios); }
+#threadView.th-out {
+  position: absolute; inset: 0; z-index: 6;
+  background: var(--bg, #0a1c3f);
+  animation: threadSlideOut 0.42s var(--ease-ios) forwards;
+}
+@keyframes threadSlideIn { from { transform: translateX(100%); } }
+@keyframes threadSlideOut { to { transform: translateX(-100%); opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) {
+  #threadView.th-in, #threadView.th-out { animation: none; }
+}

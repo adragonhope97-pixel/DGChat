@@ -79,6 +79,27 @@
     applyLayout();
   }
 
+  // 单栏页面切换：详情右滑入 / 左滑出（带动画；reduced-motion 时直接切换）
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function enterDetailPane() {
+    if (state.mode !== 'single') { document.body.dataset.duoPane = 'list'; return; }
+    document.body.dataset.duoPane = 'detail';
+    if (REDUCED) return;
+    const pane = state.tab === 'posts' ? $('#duoDetailPane') : $('#duoThreadPane');
+    if (!pane) return;
+    pane.classList.remove('pane-exit');
+    pane.classList.add('pane-enter');
+    pane.addEventListener('animationend', () => pane.classList.remove('pane-enter'), { once: true });
+  }
+  function exitToListPane() {
+    if (state.mode !== 'single') return;
+    const pane = state.tab === 'posts' ? $('#duoDetailPane') : $('#duoThreadPane');
+    document.body.dataset.duoPane = 'list';
+    if (REDUCED || !pane) return;
+    pane.classList.add('pane-exit');
+    pane.addEventListener('animationend', () => pane.classList.remove('pane-exit'), { once: true });
+  }
+
   // 底栏胶囊滑块：跟随激活标签（含窗口尺寸变化重算）
   function moveTabSlider(tab) {
     const ind = $('#duoTabInd');
@@ -99,7 +120,7 @@
         if (e.target.closest('.duo-card-btn') || e.target.closest('.duo-topic-chip')) return;
         const tab = state.tab;
         openPostDetail(Number(el.dataset.id));
-        if (state.mode === 'single' && (tab === 'posts' || tab === 'me' || tab === 'discover')) document.body.dataset.duoPane = 'detail';
+        if (state.mode === 'single' && (tab === 'posts' || tab === 'me' || tab === 'discover')) enterDetailPane();
       })
     );
     container.querySelectorAll('.duo-card-btn').forEach((b) =>
@@ -247,7 +268,7 @@
         }
       });
       $('#duoMsgList').scrollTop = $('#duoMsgList').scrollHeight;
-      if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
+      enterDetailPane();
     } catch (err) {
       $('#duoMsgList').innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
     }
@@ -578,7 +599,6 @@
     goPostsAndOpen: (id) => {
       setTab('posts');
       openPostDetail(id);
-      if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
     },
     goChat: () => setTab('chat'),
     openThreadById: (uid, name) => {
@@ -638,7 +658,7 @@
     $('#duoDetailExit').addEventListener('click', () => {
       state.postDetail = null;
       $('#duoDetailBody').innerHTML = '<div class="duo-empty">从左侧选择一条动态查看详情</div>';
-      if (state.mode === 'single' && state.tab === 'posts') document.body.dataset.duoPane = 'list';
+      exitToListPane();
     });
     $('#duoThreadExit').addEventListener('click', () => {
       state.threadPartner = null;
@@ -647,7 +667,7 @@
       $('#duoMsgList').innerHTML = '<div class="duo-empty">从左侧选择一个会话</div>';
       const rb = $('#duoReplyBar');
       if (rb) rb.hidden = true;
-      if (state.mode === 'single') document.body.dataset.duoPane = 'list';
+      exitToListPane();
     });
     $('#duoReplyCancel').addEventListener('click', () => {
       state.threadReplyTo = null;

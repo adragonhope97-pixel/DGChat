@@ -52,7 +52,7 @@ body {
   background: #e8506a; color: #fff; font-size: 10px; text-align: center; padding: 0 4px; }
 
 /* ---------- 面板骨架：闭合单栏 / 展开双栏 ---------- */
-.duo-stage { display: flex; height: calc(100% - 52px - var(--duo-safe-top)); }
+.duo-stage { display: flex; position: relative; overflow: hidden; height: calc(100% - 52px - var(--duo-safe-top)); }
 .duo-pane {
   flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column;
   border-right: 1px solid var(--duo-border); overflow: hidden;
@@ -394,3 +394,17 @@ body:has(.duo-tabbar) .duo-stage { height: calc(100% - 52px - var(--duo-safe-top
 
 /* 话题 chip 静态（不可点） */
 .duo-topic-chip.static { cursor: default; }
+
+/* ---------- 单栏页面切换过渡：详情右滑入 / 退出左滑出 ---------- */
+@keyframes duoPaneIn { from { transform: translateX(100%); } }
+@keyframes duoPaneOut { to { transform: translateX(-100%); opacity: 0.55; } }
+body[data-duo-mode='single'] .duo-pane.pane-enter { animation: duoPaneIn 0.38s cubic-bezier(0.32, 0.72, 0, 1); }
+/* 退出中的面板绝对定位盖在列表上，向左滑出后回收（置于隐藏规则之后以覆盖 display） */
+body[data-duo-mode='single'] .duo-pane.pane-exit {
+  display: flex; position: absolute; inset: 0; z-index: 6;
+  animation: duoPaneOut 0.38s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-duo-mode='single'] .duo-pane.pane-enter,
+  body[data-duo-mode='single'] .duo-pane.pane-exit { animation: none; }
+}

@@ -1061,7 +1061,13 @@ async function openThread(uid) {
     const data = await api('/conversations/' + uid);
     $('#convList').hidden = true;
     $('#msgEmpty').hidden = true;
-    $('#threadView').hidden = false;
+    const tv = $('#threadView');
+    tv.hidden = false;
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      tv.classList.remove('th-out');
+      tv.classList.add('th-in');
+      tv.addEventListener('animationend', () => tv.classList.remove('th-in'), { once: true });
+    }
     $('#threadName').textContent = data.user.nickname;
     renderThread(data.messages);
     updateUnreadBadge();
@@ -1160,6 +1166,17 @@ $('#replyCancel')?.addEventListener('click', () => {
 });
 
 $('#threadBack').addEventListener('click', () => {
+  const tv = $('#threadView');
+  if (!tv.hidden && !matchMedia('(prefers-reduced-motion: reduce)').matches && !tv.classList.contains('th-out')) {
+    $('#convList').hidden = false; // 列表先垫底，线程向左滑出
+    tv.classList.add('th-out');
+    tv.addEventListener('animationend', () => {
+      tv.classList.remove('th-out');
+      closeThread();
+      loadConversations();
+    }, { once: true });
+    return;
+  }
   closeThread();
   loadConversations();
 });
