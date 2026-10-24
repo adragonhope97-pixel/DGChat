@@ -357,6 +357,20 @@ cd ios/App && xcodebuild -scheme App -configuration Debug -destination 'generic/
 
 ---
 
+## 🔒 安全與部署
+
+**內建防護**（詳見 [CHANGELOG.md](CHANGELOG.md) 安全加固章節）：CSP 等安全回應標頭、CORS 白名單、工作階段 30 天過期、登入失敗鎖定、修改密碼驗證並撤銷其他工作階段、上傳魔數驗證、請求主體上限與伺服器逾時、全介面頻率限制、錯誤回應脫敏、安全事件日誌（不含敏感資訊）、`node --test tests/` 覆蓋 22 項權限／安全測試。
+
+**公網部署需人工設定**（應用層無法替代）：
+
+| 項目 | 說明 |
+| --- | --- |
+| HTTPS | 以 Nginx/Caddy 終止 TLS 並反向代理，轉送 `X-Forwarded-Proto` 後 HSTS 自動啟用 |
+| CDN / WAF / DDoS | 應用層限流無法抵禦大流量攻擊，請啟用部署平台提供的防護 |
+| 環境變數 | `PORT` / `APP_NAME` / `CORS_ORIGINS` / `FORCE_HSTS=1` / `SESSION_TTL_MS` / `LOGIN_MAX_FAILS` / `LOGIN_LOCK_MS` |
+
+---
+
 ## 🗂 專案結構
 
 ```

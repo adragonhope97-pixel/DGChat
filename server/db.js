@@ -107,6 +107,10 @@ function migrate() {
   for (const c of db.comments) {
     if (c.hidden === undefined) c.hidden = false;
   }
+  // 会话对象化（带创建时间，用于 30 天过期与吊销）
+  for (const [tk, v] of Object.entries(db.tokens)) {
+    if (typeof v === 'number') db.tokens[tk] = { u: v, t: Date.now() };
+  }
   if (!db.reports) db.reports = [];
   if (!db.adminLogs) db.adminLogs = [];
   if (db.seq.report === undefined) db.seq.report = 0;

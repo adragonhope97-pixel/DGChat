@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch: {}
 
+permissions:
+  contents: read  # 最小权限：工作流只读仓库
+
 jobs:
   build-ipa:
     runs-on: macos-15

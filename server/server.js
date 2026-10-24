@@ -52,13 +52,51 @@ const upload = multer({
 // 把上传的文件映射为可访问的 URL 列表
 const fileUrls = (files) => (files || []).map((f) => '/uploads/' + f.filename);
 
-app.use(express.json());
+app.use(express.json({ limit: '200kb' })); // 请求体上限，降低资源耗尽风险
 
-// 允许跨域：方便以后手机端 / 本地前端调试
+// ---------- 安全响应头（CSP / nosniff / 防点击劫持 / Referrer / HSTS 条件启用） ----------
 app.use((req, res, next) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Content-Security-Policy':
+      "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " +
+      "script-src 'self'; connect-src 'self'; font-src 'self'; base-uri 'self'; " +
+      "form-action 'self'; frame-ancestors 'none'",
+  });
+  // HSTS 仅在 HTTPS 部署下启用（反向代理透传 X-Forwarded-Proto），也可用 FORCE_HSTS=1 强制
+  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  if (isHttps || process.env.FORCE_HSTS === '1') {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// ---------- CORS 精确白名单（默认仅 Capacitor WebView 来源；自定义来源用 CORS_ORIGINS 环境变量） ----------
+// 认证走 Authorization 头而非 Cookie，不使用跨域凭证；白名单外来源不返回 CORS 头
+const CORS_EXTRA = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((x) => x.trim())
+  .filter(Boolean);
+const CORS_ALLOWED = new Set([
+  'capacitor://localhost', // iOS WebView
+  'http://localhost', // Android WebView (androidScheme http)
+  'https://localhost',
+  'ionic://localhost',
+  ...CORS_EXTRA,
+]);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && CORS_ALLOWED.has(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.set('Access-Control-Allow-Credentials', 'false');
+  }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -79,6 +117,31 @@ function publicUser(u) {
   };
 }
 
+// 校验上传文件的真实格式（魔数），防止伪装成图片的可执行/脚本内容落盘
+function verifyImageMagic(files, req) {
+  for (const f of files || []) {
+    let buf = Buffer.alloc(12);
+    let fd;
+    try {
+      fd = fs.openSync(f.path, 'r');
+      fs.readSync(fd, buf, 0, 12, 0);
+    } catch {
+      continue;
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+    const isJpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+    const isGif = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46;
+    const isWebp = buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP';
+    if (!isJpeg && !isPng && !isGif && !isWebp) {
+      fs.rmSync(f.path, { force: true }); // 删除伪装文件
+      secLog('upload_rejected', 'fake_image ip=' + (req && req.ip));
+      throw Object.assign(new Error('图片文件格式不正确'), { status: 400 });
+    }
+  }
+}
+
 // 删除旧头像文件（忽略错误）
 function removeAvatarFile(url) {
   if (!url || !url.startsWith('/uploads/')) return;
@@ -86,6 +149,22 @@ function removeAvatarFile(url) {
 }
 
 const isAdmin = (u) => !!u && u.role === 'admin';
+
+// ---------- 会话与安全事件 ----------
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS) || 30 * 24 * 3600e3; // 会话有效期，默认 30 天
+const LOGIN_MAX_FAILS = Number(process.env.LOGIN_MAX_FAILS) || 10; // 连续失败锁定阈值
+const LOGIN_LOCK_MS = Number(process.env.LOGIN_LOCK_MS) || 15 * 60e3; // 锁定时长，默认 15 分钟
+
+// 安全事件日志：只记录必要事实，不含密码 / 令牌 / 完整凭据
+const SEC_LOG = path.join(__dirname, '..', 'logs', 'security.log');
+fs.mkdirSync(path.dirname(SEC_LOG), { recursive: true });
+function secLog(event, detail) {
+  const line = '[' + new Date().toISOString() + '] ' + event + (detail ? ' ' + detail : '');
+  try {
+    fs.appendFileSync(SEC_LOG, line + '\n');
+  } catch {}
+  console.log('[sec]', line);
+}
 
 // ---------- 简易频率限制（内存令牌桶，按 IP+路由） ----------
 const rateBuckets = new Map();
@@ -111,10 +190,20 @@ function rateLimit({ windowMs = 3600e3, max }) {
   };
 }
 
-// 从 Authorization 头解析登录用户
+// 从 Authorization 头解析登录用户（会话超时自动失效）
 function auth(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const userId = token && db.data.tokens[token];
+  const rec = token ? db.data.tokens[token] : null;
+  let userId = null;
+  if (rec) {
+    userId = typeof rec === 'number' ? rec : rec.u; // 兼容 v1 数字形态
+    const createdAt = typeof rec === 'number' ? Date.now() : rec.t || 0;
+    if (Date.now() - createdAt > SESSION_TTL_MS) {
+      delete db.data.tokens[token]; // 会话过期，立即吊销
+      db.save();
+      userId = null;
+    }
+  }
   req.user = userId ? db.data.users.find((u) => u.id === userId) || null : null;
   req.token = token || null;
   next();
@@ -256,7 +345,7 @@ app.post('/api/auth/register', rateLimit({ max: 20 }), (req, res) => {
   };
   db.data.users.push(user);
   const token = crypto.randomBytes(24).toString('hex');
-  db.data.tokens[token] = user.id;
+  db.data.tokens[token] = { u: user.id, t: Date.now() }; // 对象化：记录创建时间用于过期
   db.save();
   res.json({
     token,
@@ -264,20 +353,37 @@ app.post('/api/auth/register', rateLimit({ max: 20 }), (req, res) => {
   });
 });
 
+const loginFailures = new Map(); // username -> { count, lockUntil }
 app.post('/api/auth/login', rateLimit({ max: 30 }), (req, res) => {
   const { username, password } = req.body || {};
-  const identifier = String(username || '').trim();
+  const identifier = String(username || '').trim().slice(0, 254);
+  const failRec = loginFailures.get(identifier.toLowerCase());
+  if (failRec && failRec.lockUntil > Date.now()) {
+    secLog('login_locked', 'ip=' + req.ip);
+    return res.status(429).json({ error: '失败次数过多，账号已临时锁定，请稍后再试' });
+  }
   // 支持用户名或邮箱登录
   const user =
     db.data.users.find((u) => u.username === identifier) ||
     db.data.users.find((u) => u.email && u.email === identifier.toLowerCase());
   if (!user || db.hashPassword(String(password || ''), user.salt) !== user.passwordHash) {
+    const rec = loginFailures.get(identifier.toLowerCase()) || { count: 0, lockUntil: 0 };
+    rec.count += 1;
+    if (rec.count >= LOGIN_MAX_FAILS) {
+      rec.lockUntil = Date.now() + LOGIN_LOCK_MS;
+      rec.count = 0;
+      const uh = crypto.createHash('sha256').update(identifier.toLowerCase()).digest('hex').slice(0, 12);
+      secLog('login_lock_triggered', 'user_hash=' + uh + ' ip=' + req.ip);
+    }
+    loginFailures.set(identifier.toLowerCase(), rec);
+    secLog('login_fail', 'ip=' + req.ip);
     return res.status(401).json({ error: '用户名或密码错误' });
   }
+  loginFailures.delete(identifier.toLowerCase());
   if (user.status === 'banned') return res.status(403).json({ error: '账号已被封禁' });
   if (user.status === 'restricted') return res.status(403).json({ error: '账号已被限制使用，请联系管理员' });
   const token = crypto.randomBytes(24).toString('hex');
-  db.data.tokens[token] = user.id;
+  db.data.tokens[token] = { u: user.id, t: Date.now() }; // 对象化：记录创建时间用于过期
   db.save();
   res.json({
     token,
@@ -310,6 +416,26 @@ app.get('/api/me', auth, (req, res) => {
   });
 });
 
+// 修改密码：必须验证当前密码；成功后吊销除当前会话外的全部会话
+app.put('/api/me/password', auth, requireAuth, rateLimit({ max: 5 }), (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (db.hashPassword(String(currentPassword || ''), req.user.salt) !== req.user.passwordHash) {
+    secLog('password_change_fail', 'uid=' + req.user.id);
+    return res.status(403).json({ error: '当前密码不正确' });
+  }
+  if (!newPassword || String(newPassword).length < 6 || String(newPassword).length > 30) {
+    return res.status(400).json({ error: '新密码长度需为 6-30 位' });
+  }
+  req.user.salt = crypto.randomBytes(16).toString('hex');
+  req.user.passwordHash = db.hashPassword(String(newPassword), req.user.salt);
+  // 吊销其他会话（保留当前登录）
+  for (const [tk, rec] of Object.entries(db.data.tokens)) {
+    if ((typeof rec === 'number' ? rec : rec.u) === req.user.id && tk !== req.token) delete db.data.tokens[tk];
+  }
+  db.save();
+  secLog('password_changed', 'uid=' + req.user.id);
+  res.json({ ok: true });
+});
 // ---------- 版块 ----------
 
 app.get('/api/boards', (req, res) => {
@@ -318,7 +444,7 @@ app.get('/api/boards', (req, res) => {
 
 // ---------- 帖子 ----------
 
-app.get('/api/posts', auth, (req, res) => {
+app.get('/api/posts', auth, rateLimit({ windowMs: 10 * 60e3, max: 300 }), (req, res) => {
   const { board, q, sort, mine, liked, fav } = req.query;
   if ((mine === '1' || liked === '1' || fav === '1') && !req.user) {
     return res.status(401).json({ error: '请先登录' });
@@ -377,7 +503,7 @@ app.get('/api/posts/:id', auth, (req, res) => {
   res.json({ post: postView(post, req.user), comments });
 });
 
-app.post('/api/posts', auth, requireAuth, upload.array('images', 9), (req, res) => {
+app.post('/api/posts', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 30 }), upload.array('images', 9), (req, res) => {
   const { board, title, content } = req.body;
   const anonymous = req.body.anonymous === 'true' || req.body.anonymous === true;
   const visibility = req.body.visibility === 'private' ? 'private' : 'public';
@@ -388,6 +514,11 @@ app.post('/api/posts', auth, requireAuth, upload.array('images', 9), (req, res) 
   if (!content || !content.trim()) return res.status(400).json({ error: '请填写正文内容' });
   if (content.length > 5000) return res.status(400).json({ error: '正文最多 5000 字' });
 
+  try {
+    verifyImageMagic(req.files, req);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
   const post = {
     id: db.nextId('post'),
     userId: req.user.id,
@@ -433,6 +564,11 @@ app.put('/api/posts/:id', auth, requireAuth, upload.array('images', 9), (req, re
   } catch {}
   if (!Array.isArray(kept)) kept = [];
   kept = kept.filter((u) => typeof u === 'string' && u.startsWith('/uploads/'));
+  try {
+    verifyImageMagic(req.files, req);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
   post.title = title.trim();
   post.content = content.trim();
   post.images = [...kept, ...fileUrls(req.files)].slice(0, 9);
@@ -534,8 +670,13 @@ app.get('/api/me/stats', auth, requireAuth, (req, res) => {
 });
 
 // 上传 / 更换头像（正方形压缩由前端完成，服务端再校验类型与大小）
-app.post('/api/me/avatar', auth, requireAuth, avatarUpload.single('avatar'), (req, res) => {
+app.post('/api/me/avatar', auth, requireAuth, rateLimit({ max: 10 }), avatarUpload.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '未收到图片' });
+  try {
+    verifyImageMagic([req.file], req);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
   removeAvatarFile(req.user.avatar);
   req.user.avatar = '/uploads/avatars/' + req.file.filename;
   db.save();
@@ -606,7 +747,7 @@ app.get('/api/conversations/:userId', auth, requireAuth, (req, res) => {
 });
 
 // 发送私信
-app.post('/api/messages', auth, requireAuth, (req, res) => {
+app.post('/api/messages', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 60 }), (req, res) => {
   const { toUserId, content } = req.body || {};
   const partner = db.data.users.find((u) => u.id === Number(toUserId));
   if (!partner) return res.status(404).json({ error: '用户不存在' });
@@ -634,7 +775,7 @@ app.post('/api/messages', auth, requireAuth, (req, res) => {
 // ========== 2.0 发现与交友 ==========
 
 // 个人资料更新（昵称 / 简介 / 兴趣标签）
-app.put('/api/me/profile', auth, requireAuth, (req, res) => {
+app.put('/api/me/profile', auth, requireAuth, rateLimit({ max: 30 }), (req, res) => {
   const { nickname, bio, interests } = req.body || {};
   if (nickname !== undefined) {
     const n = String(nickname).trim();
@@ -684,7 +825,7 @@ app.get('/api/users/:id', auth, (req, res) => {
 });
 
 // 用户搜索：用户名 / 昵称 / 兴趣（排除屏蔽与封禁）
-app.get('/api/discover/users', auth, requireAuth, (req, res) => {
+app.get('/api/discover/users', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 120 }), (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const interest = String(req.query.interest || '').trim().toLowerCase();
   const list = db.data.users
@@ -715,7 +856,7 @@ app.get('/api/discover/users', auth, requireAuth, (req, res) => {
 });
 
 // 用户推荐：共同兴趣 + 活跃度（简单稳定的规则，不引入复杂服务）
-app.get('/api/discover/recommendations', auth, requireAuth, (req, res) => {
+app.get('/api/discover/recommendations', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 120 }), (req, res) => {
   const scored = db.data.users
     .filter((u) => {
       if (u.id === req.user.id) return false;
@@ -984,9 +1125,10 @@ app.post('/api/admin/users/:id/status', auth, requireAdmin, (req, res) => {
   u.status = status;
   // 封禁/限制时吊销该用户全部会话
   if (status !== 'active') {
-    for (const [tk, uid] of Object.entries(db.data.tokens)) {
-      if (uid === u.id) delete db.data.tokens[tk];
+    for (const [tk, rec] of Object.entries(db.data.tokens)) {
+      if ((typeof rec === 'number' ? rec : rec.u) === u.id) delete db.data.tokens[tk];
     }
+    secLog('account_' + status, 'uid=' + u.id + ' by=admin#' + req.user.id);
   }
   adminLog(req.user, 'set_user_status:' + status, 'user', u.id, reason);
   db.save();
@@ -1108,17 +1250,20 @@ app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version
 // 404（API）
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
 
-// 统一错误处理（含图片上传错误）
+// 统一错误处理：已知业务错误回传友好信息；未知错误返回通用提示并在服务端记录（不含令牌）
 app.use((err, req, res, next) => {
-  const msg =
-    err.code === 'LIMIT_FILE_SIZE'
-      ? '单张图片最大 5MB'
-      : err.code === 'LIMIT_FILE_COUNT'
-        ? '最多上传 9 张图片'
-        : err.message || '服务器错误';
-  res.status(400).json({ error: msg });
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: '单张图片最大 5MB' });
+  if (err.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ error: '最多上传 9 张图片' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: '请求体过大' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: '请求格式错误' });
+  console.error('[error]', req.method, req.path, err.status || '', err.message);
+  if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+  res.status(500).json({ error: '服务器错误，请稍后重试' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`${APP_NAME} 已启动：http://localhost:${PORT}`);
 });
+server.requestTimeout = 30e3; // 请求处理超时
+server.headersTimeout = 31e3; // 防慢速 HTTP 攻击（必须略大于 requestTimeout）
+server.keepAliveTimeout = 15e3;

@@ -355,6 +355,20 @@ cd ios/App && xcodebuild -scheme App -configuration Debug -destination 'generic/
 
 ---
 
+## 🔒 Security & Deployment
+
+**Built in** (see the security section of [CHANGELOG.md](CHANGELOG.md)): CSP and other security headers, CORS allowlist, 30-day session expiry, login failure lockout, password change with other-session revocation, upload magic-byte validation, request body limits and server timeouts, rate limiting across endpoints, sanitized error responses, security event logging (no secrets), and 22 permission/security tests via `node --test tests/`.
+
+**Manual deployment requirements** (cannot be replaced by the app layer):
+
+| Item | Note |
+| --- | --- |
+| HTTPS | Terminate TLS with Nginx/Caddy; HSTS auto-enables when `X-Forwarded-Proto` is forwarded |
+| CDN / WAF / DDoS | App-layer rate limiting cannot stop volumetric attacks — use your platform's protection |
+| Env vars | `PORT` / `APP_NAME` / `CORS_ORIGINS` / `FORCE_HSTS=1` / `SESSION_TTL_MS` / `LOGIN_MAX_FAILS` / `LOGIN_LOCK_MS` |
+
+---
+
 ## 🗂 Project Structure
 
 ```

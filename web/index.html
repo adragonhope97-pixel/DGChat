@@ -393,6 +393,36 @@
     <liquid-glass class="modal" id="creatorBox"><!-- JS 渲染 --></liquid-glass>
   </div>
 
+  <!-- 弹层：修改密码 -->
+  <div class="modal-mask" id="pwdModal" hidden>
+    <liquid-glass class="modal narrow">
+      <div class="modal-head">
+        <h2>修改密码</h2>
+        <button class="close-btn" data-close="pwdModal">✕</button>
+      </div>
+      <form id="pwdForm">
+        <label class="field">
+          <span class="field-label">当前密码</span>
+          <input id="pwdCurrent" type="password" autocomplete="current-password" required />
+        </label>
+        <label class="field">
+          <span class="field-label">新密码（6-30 位）</span>
+          <input id="pwdNew" type="password" autocomplete="new-password" minlength="6" maxlength="30" required />
+        </label>
+        <label class="field">
+          <span class="field-label">确认新密码</span>
+          <input id="pwdNew2" type="password" autocomplete="new-password" required />
+        </label>
+        <p class="form-error" id="pwdError" hidden></p>
+        <p class="field-hint">修改成功后，其他设备上的登录会全部退出</p>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="pwdModal">取消</button>
+          <button type="submit" class="btn primary">确认修改</button>
+        </div>
+      </form>
+    </liquid-glass>
+  </div>
+
   <!-- 弹层：管理后台 -->
   <div class="modal-mask" id="adminModal" hidden>
     <liquid-glass class="modal admin-modal" id="adminBox"><!-- JS 渲染 --></liquid-glass>
