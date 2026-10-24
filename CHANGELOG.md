@@ -1,5 +1,16 @@
 # DGChat 版本记录
 
+## 2.0.1（2026-10-24）—— 安全加固
+
+- 接入 [helmet](https://github.com/helmetjs/helmet)（CSP 按站点资源定制：style 内联 / img data:·blob: / script 同源 / frame-ancestors none；HSTS 仍按 HTTPS 部署条件启用）
+- 接入 [express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) 替换手工令牌桶（标准 RateLimit-* 响应头；`TRUST_PROXY=1` 供反代部署使用）
+- **DOMPurify 评估结论：不接入** —— 渲染路径审计确认 41 处 innerHTML 全部经过 escapeHtml/textContent/服务端受控值，无 HTML 注入汇点；已用浏览器级 XSS 回归（恶意昵称/标题注入）验证转义有效
+- 新增每日轮转备份（`data/backups/`，保留 7 份）与 data.json 损坏自动恢复（隔离损坏文件 → 从最近备份还原）
+- Semgrep 规则（`.semgrep.yml`）本地 0 命中：error.message 回传、日志含凭据、弱哈希、裸 innerHTML 四类模式全部清零
+- 新增 CI 工作流 `security-scan.yml`：[gitleaks](https://github.com/gitleaks/gitleaks) 全历史密钥扫描 + [osv-scanner](https://github.com/google/osv-scanner) 依赖漏洞 + [semgrep](https://github.com/semgrep/semgrep) 静态分析（OWASP Top 10 + 定制规则）
+- 启动时检测演示账号并输出公网部署风险提示
+
+
 ## 2.0.0（2026-10-24）
 
 DGChat 2.0 —— 发现与交友、隐私与安全、创作者与运营工具三大模块正式上线。

@@ -1,0 +1,47 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1' # 每周一 03:00 UTC 定期扫描
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Gitleaks（密钥泄露扫描）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 全历史扫描
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  osv-scanner:
+    name: OSV-Scanner（依赖漏洞扫描）
+    runs-on: ubuntu-latest
+    continue-on-error: true # 先报告不阻断，风险项确认后逐步收紧
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 osv-scanner
+        run: |
+          curl -sSfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o /usr/local/bin/osv-scanner
+          chmod +x /usr/local/bin/osv-scanner
+      - name: 扫描 lockfile
+        run: osv-scanner --lockfile=./package-lock.json || true
+
+  semgrep:
+    name: Semgrep（静态安全分析）
+    runs-on: ubuntu-latest
+    continue-on-error: true # 先报告不阻断，规则确认后逐步收紧
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: 运行项目定制规则 + OWASP 规则集
+        run: semgrep scan --config .semgrep.yml --config p/owasp-top-ten --severity ERROR --metrics=off

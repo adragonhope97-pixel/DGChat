@@ -61,12 +61,59 @@ function seed() {
 
 function load() {
   if (fs.existsSync(DATA_FILE)) {
-    db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    let raw = null;
+    try {
+      raw = fs.readFileSync(DATA_FILE, 'utf8');
+      db = JSON.parse(raw);
+    } catch (err) {
+      // data.json 损坏（异常断电/磁盘错误）：隔离损坏文件，优先从最近备份恢复
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const corrupt = DATA_FILE + '.corrupt-' + stamp;
+      fs.renameSync(DATA_FILE, corrupt);
+      console.error('[db] data.json 解析失败，已隔离到', corrupt, '，尝试从备份恢复…');
+      const bak = latestBackup();
+      if (bak) {
+        fs.copyFileSync(bak, DATA_FILE);
+        db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        console.error('[db] 已从备份恢复：', bak);
+      } else {
+        console.error('[db] 无可用备份，只能以种子数据启动（原文件已保留在 ' + corrupt + '）');
+        db = seed();
+      }
+    }
   } else {
     db = seed();
   }
   migrate();
+  rotateDailyBackup();
   save();
+}
+
+// 最近一次可用备份（backups/ 与 migrations/ 都找，取最新）
+function latestBackup() {
+  const dirs = [path.join(DATA_DIR, 'backups'), path.join(DATA_DIR, 'migrations')];
+  let best = null;
+  for (const d of dirs) {
+    if (!fs.existsSync(d)) continue;
+    for (const f of fs.readdirSync(d)) {
+      if (!f.endsWith('.json')) continue;
+      const full = path.join(d, f);
+      if (!best || fs.statSync(full).mtimeMs > fs.statSync(best).mtimeMs) best = full;
+    }
+  }
+  return best;
+}
+
+// 每日轮转备份：每天首次启动把当前 data.json 存入 backups/，保留最近 7 份
+function rotateDailyBackup() {
+  if (!fs.existsSync(DATA_FILE)) return;
+  const dir = path.join(DATA_DIR, 'backups');
+  fs.mkdirSync(dir, { recursive: true });
+  const today = 'data-' + new Date().toISOString().slice(0, 10) + '.json';
+  const target = path.join(dir, today);
+  if (!fs.existsSync(target)) fs.copyFileSync(DATA_FILE, target);
+  const files = fs.readdirSync(dir).filter((f) => f.startsWith('data-') && f.endsWith('.json')).sort();
+  while (files.length > 7) fs.rmSync(path.join(dir, files.shift()), { force: true });
 }
 
 // ---------- 2.0 数据迁移 ----------

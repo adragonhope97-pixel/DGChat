@@ -1,0 +1,41 @@
+# DGChat 项目定制 Semgrep 规则
+# 聚焦本仓库真实技术栈（Express + 原生 JS + JSON 存储）的高风险模式
+rules:
+  # 错误信息直接回传给客户端（可能泄露内部细节）
+  - id: dgchat-error-message-to-client
+    languages: [javascript]
+    message: "不要把 err.message 直接返回给客户端；使用已知的友好文案，未知错误返回通用提示"
+    severity: ERROR
+    patterns:
+      - pattern: 'res.status(...).json({ error: $E.message, ... })'
+
+  # 令牌/密码出现在日志
+  - id: dgchat-token-in-log
+    languages: [javascript]
+    message: "日志中不得出现令牌、密码等敏感凭据"
+    severity: ERROR
+    patterns:
+      - pattern-either:
+          - pattern: 'console.$M(..., $REQ.token, ...)'
+          - pattern: 'console.$M(..., $REQ.user.passwordHash, ...)'
+          - pattern: 'console.$M(..., $REQ.user.salt, ...)'
+
+  # 用户密码哈希强度检查：禁止出现 md5/sha1 创建密码哈希
+  - id: dgchat-weak-hash
+    languages: [javascript]
+    message: "密码哈希禁止使用 md5/sha1，必须使用 scrypt/bcrypt/argon2"
+    severity: ERROR
+    pattern-either:
+      - pattern: 'crypto.createHash("md5")'
+      - pattern: 'crypto.createHash("sha1")'
+
+  # JSON.stringify 直接拼进 HTML（绕过 escapeHtml 的路径）
+  - id: dgchat-raw-string-to-innerhtml
+    languages: [javascript]
+    message: "innerHTML 插值必须经过 escapeHtml 或为服务端受控数值；发现新的裸插值请人工确认"
+    severity: WARNING
+    pattern-either:
+      - pattern: '$EL.innerHTML = $USER.nickname'
+      - pattern: '$EL.innerHTML = $USER.content'
+      - pattern: '$EL.innerHTML = $USER.username'
+      - pattern: '$EL.innerHTML = $USER.title'

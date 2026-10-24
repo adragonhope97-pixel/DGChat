@@ -5,9 +5,13 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
 const db = require('./db');
 
 const app = express();
+// 部署在反向代理之后时设置 TRUST_PROXY=1，使 req.ip 为真实客户端 IP（限流依赖它）
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const APP_NAME = process.env.APP_NAME || 'Campus Wall 校园墙';
 
@@ -54,20 +58,33 @@ const fileUrls = (files) => (files || []).map((f) => '/uploads/' + f.filename);
 
 app.use(express.json({ limit: '200kb' })); // 请求体上限，降低资源耗尽风险
 
-// ---------- 安全响应头（CSP / nosniff / 防点击劫持 / Referrer / HSTS 条件启用） ----------
+// ---------- 安全响应头（helmet）：CSP 按实际资源定制，HSTS 仅在 HTTPS 部署启用 ----------
+// CSP 说明：style-src 允许内联（站点大量使用 style 属性）；img 允许 data:/blob:（自定义背景）；
+// script 仅同源（无内联脚本）；connect-src 同源（PWA 与页面同源；Capacitor 端从本地包加载，不走此头）。
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "img-src": ["'self'", 'data:', 'blob:'],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "script-src": ["'self'"],
+      "connect-src": ["'self'"],
+      "font-src": ["'self'"],
+      "base-uri": ["'self'"],
+      "form-action": ["'self'"],
+      "frame-ancestors": ["'none'"],
+      "upgrade-insecure-requests": null, // 本机/局域网 HTTP 部署不能强制升级
+    },
+  },
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+  crossOriginResourcePolicy: { policy: 'same-site' }, // /uploads 图片只允许同站加载
+  hsts: false, // 由下方中间件按 HTTPS 部署条件启用
+  hidePoweredBy: true,
+}));
 app.use((req, res, next) => {
-  res.set({
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-    'Cross-Origin-Opener-Policy': 'same-origin',
-    'Content-Security-Policy':
-      "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " +
-      "script-src 'self'; connect-src 'self'; font-src 'self'; base-uri 'self'; " +
-      "form-action 'self'; frame-ancestors 'none'",
-  });
-  // HSTS 仅在 HTTPS 部署下启用（反向代理透传 X-Forwarded-Proto），也可用 FORCE_HSTS=1 强制
   const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
   if (isHttps || process.env.FORCE_HSTS === '1') {
     res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -137,9 +154,10 @@ function verifyImageMagic(files, req) {
     if (!isJpeg && !isPng && !isGif && !isWebp) {
       fs.rmSync(f.path, { force: true }); // 删除伪装文件
       secLog('upload_rejected', 'fake_image ip=' + (req && req.ip));
-      throw Object.assign(new Error('图片文件格式不正确'), { status: 400 });
+      return '图片文件格式不正确'; // 固定文案，不透传内部信息
     }
   }
+  return null;
 }
 
 // 删除旧头像文件（忽略错误）
@@ -166,29 +184,29 @@ function secLog(event, detail) {
   console.log('[sec]', line);
 }
 
-// ---------- 简易频率限制（内存令牌桶，按 IP+路由） ----------
-const rateBuckets = new Map();
-setInterval(() => {
-  const cutoff = Date.now() - 60 * 60e3;
-  for (const [k, v] of rateBuckets) if (v.reset < cutoff) rateBuckets.delete(k);
-}, 10 * 60e3).unref();
-
-function rateLimit({ windowMs = 3600e3, max }) {
-  return (req, res, next) => {
-    const key = `${req.ip || req.socket.remoteAddress}:${req.path}`;
-    const now = Date.now();
-    let b = rateBuckets.get(key);
-    if (!b || b.reset < now) {
-      b = { count: 0, reset: now + windowMs };
-      rateBuckets.set(key, b);
-    }
-    b.count += 1;
-    if (b.count > max) {
-      return res.status(429).json({ error: '操作太频繁，请稍后再试' });
-    }
-    next();
-  };
-}
+// ---------- 接口频率限制（express-rate-limit，标准 RateLimit-* 响应头） ----------
+const mkLimiter = (windowMs, max) =>
+  rateLimit({
+    windowMs,
+    max,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: '操作太频繁，请稍后再试' },
+    // 全局限流统计（可选）：validate 默认开启，部署在代理后请设 TRUST_PROXY=1
+  });
+const LIMITS = {
+  login: mkLimiter(15 * 60e3, 30),
+  register: mkLimiter(60 * 60e3, 20),
+  postCreate: mkLimiter(10 * 60e3, 30),
+  postList: mkLimiter(10 * 60e3, 300),
+  comment: mkLimiter(60 * 60e3, 60),
+  message: mkLimiter(10 * 60e3, 60),
+  search: mkLimiter(10 * 60e3, 120),
+  upload: mkLimiter(60 * 60e3, 10),
+  report: mkLimiter(60 * 60e3, 30),
+  profile: mkLimiter(60 * 60e3, 30),
+  discover: mkLimiter(10 * 60e3, 120),
+};
 
 // 从 Authorization 头解析登录用户（会话超时自动失效）
 function auth(req, res, next) {
@@ -303,7 +321,7 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-app.post('/api/auth/register', rateLimit({ max: 20 }), (req, res) => {
+app.post('/api/auth/register', LIMITS.register, (req, res) => {
   const { username, password, nickname, email } = req.body || {};
   if (!username || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ error: '用户名需为 3-20 位字母、数字或下划线' });
@@ -354,7 +372,7 @@ app.post('/api/auth/register', rateLimit({ max: 20 }), (req, res) => {
 });
 
 const loginFailures = new Map(); // username -> { count, lockUntil }
-app.post('/api/auth/login', rateLimit({ max: 30 }), (req, res) => {
+app.post('/api/auth/login', LIMITS.login, (req, res) => {
   const { username, password } = req.body || {};
   const identifier = String(username || '').trim().slice(0, 254);
   const failRec = loginFailures.get(identifier.toLowerCase());
@@ -417,7 +435,7 @@ app.get('/api/me', auth, (req, res) => {
 });
 
 // 修改密码：必须验证当前密码；成功后吊销除当前会话外的全部会话
-app.put('/api/me/password', auth, requireAuth, rateLimit({ max: 5 }), (req, res) => {
+app.put('/api/me/password', auth, requireAuth, mkLimiter(60 * 60e3, 5), (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (db.hashPassword(String(currentPassword || ''), req.user.salt) !== req.user.passwordHash) {
     secLog('password_change_fail', 'uid=' + req.user.id);
@@ -444,7 +462,7 @@ app.get('/api/boards', (req, res) => {
 
 // ---------- 帖子 ----------
 
-app.get('/api/posts', auth, rateLimit({ windowMs: 10 * 60e3, max: 300 }), (req, res) => {
+app.get('/api/posts', auth, LIMITS.postList, (req, res) => {
   const { board, q, sort, mine, liked, fav } = req.query;
   if ((mine === '1' || liked === '1' || fav === '1') && !req.user) {
     return res.status(401).json({ error: '请先登录' });
@@ -503,7 +521,7 @@ app.get('/api/posts/:id', auth, (req, res) => {
   res.json({ post: postView(post, req.user), comments });
 });
 
-app.post('/api/posts', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 30 }), upload.array('images', 9), (req, res) => {
+app.post('/api/posts', auth, requireAuth, LIMITS.postCreate, upload.array('images', 9), (req, res) => {
   const { board, title, content } = req.body;
   const anonymous = req.body.anonymous === 'true' || req.body.anonymous === true;
   const visibility = req.body.visibility === 'private' ? 'private' : 'public';
@@ -514,11 +532,8 @@ app.post('/api/posts', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 
   if (!content || !content.trim()) return res.status(400).json({ error: '请填写正文内容' });
   if (content.length > 5000) return res.status(400).json({ error: '正文最多 5000 字' });
 
-  try {
-    verifyImageMagic(req.files, req);
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
-  }
+  const badImage = verifyImageMagic(req.files, req);
+  if (badImage) return res.status(400).json({ error: badImage });
   const post = {
     id: db.nextId('post'),
     userId: req.user.id,
@@ -564,11 +579,8 @@ app.put('/api/posts/:id', auth, requireAuth, upload.array('images', 9), (req, re
   } catch {}
   if (!Array.isArray(kept)) kept = [];
   kept = kept.filter((u) => typeof u === 'string' && u.startsWith('/uploads/'));
-  try {
-    verifyImageMagic(req.files, req);
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
-  }
+  const badImage = verifyImageMagic(req.files, req);
+  if (badImage) return res.status(400).json({ error: badImage });
   post.title = title.trim();
   post.content = content.trim();
   post.images = [...kept, ...fileUrls(req.files)].slice(0, 9);
@@ -623,7 +635,7 @@ app.post('/api/posts/:id/favorite', auth, requireAuth, (req, res) => {
 
 // ---------- 评论 ----------
 
-app.post('/api/posts/:id/comments', auth, requireAuth, rateLimit({ max: 60 }), (req, res) => {
+app.post('/api/posts/:id/comments', auth, requireAuth, LIMITS.comment, (req, res) => {
   const post = db.data.posts.find((p) => p.id === Number(req.params.id));
   if (!post || !canViewPost(post, req.user)) return res.status(404).json({ error: '帖子不存在或已被删除' });
   const { content, anonymous } = req.body || {};
@@ -670,13 +682,10 @@ app.get('/api/me/stats', auth, requireAuth, (req, res) => {
 });
 
 // 上传 / 更换头像（正方形压缩由前端完成，服务端再校验类型与大小）
-app.post('/api/me/avatar', auth, requireAuth, rateLimit({ max: 10 }), avatarUpload.single('avatar'), (req, res) => {
+app.post('/api/me/avatar', auth, requireAuth, LIMITS.upload, avatarUpload.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '未收到图片' });
-  try {
-    verifyImageMagic([req.file], req);
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
-  }
+  const badImage = verifyImageMagic([req.file], req);
+  if (badImage) return res.status(400).json({ error: badImage });
   removeAvatarFile(req.user.avatar);
   req.user.avatar = '/uploads/avatars/' + req.file.filename;
   db.save();
@@ -747,7 +756,7 @@ app.get('/api/conversations/:userId', auth, requireAuth, (req, res) => {
 });
 
 // 发送私信
-app.post('/api/messages', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 60 }), (req, res) => {
+app.post('/api/messages', auth, requireAuth, LIMITS.message, (req, res) => {
   const { toUserId, content } = req.body || {};
   const partner = db.data.users.find((u) => u.id === Number(toUserId));
   if (!partner) return res.status(404).json({ error: '用户不存在' });
@@ -775,7 +784,7 @@ app.post('/api/messages', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, ma
 // ========== 2.0 发现与交友 ==========
 
 // 个人资料更新（昵称 / 简介 / 兴趣标签）
-app.put('/api/me/profile', auth, requireAuth, rateLimit({ max: 30 }), (req, res) => {
+app.put('/api/me/profile', auth, requireAuth, LIMITS.profile, (req, res) => {
   const { nickname, bio, interests } = req.body || {};
   if (nickname !== undefined) {
     const n = String(nickname).trim();
@@ -825,7 +834,7 @@ app.get('/api/users/:id', auth, (req, res) => {
 });
 
 // 用户搜索：用户名 / 昵称 / 兴趣（排除屏蔽与封禁）
-app.get('/api/discover/users', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 120 }), (req, res) => {
+app.get('/api/discover/users', auth, requireAuth, LIMITS.search, (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const interest = String(req.query.interest || '').trim().toLowerCase();
   const list = db.data.users
@@ -856,7 +865,7 @@ app.get('/api/discover/users', auth, requireAuth, rateLimit({ windowMs: 10 * 60e
 });
 
 // 用户推荐：共同兴趣 + 活跃度（简单稳定的规则，不引入复杂服务）
-app.get('/api/discover/recommendations', auth, requireAuth, rateLimit({ windowMs: 10 * 60e3, max: 120 }), (req, res) => {
+app.get('/api/discover/recommendations', auth, requireAuth, LIMITS.discover, (req, res) => {
   const scored = db.data.users
     .filter((u) => {
       if (u.id === req.user.id) return false;
@@ -991,7 +1000,7 @@ app.get('/api/discover/hot', auth, (req, res) => {
 
 // ========== 2.0 举报 ==========
 
-app.post('/api/reports', auth, requireAuth, rateLimit({ max: 30 }), (req, res) => {
+app.post('/api/reports', auth, requireAuth, LIMITS.report, (req, res) => {
   const { targetType, targetId, reason, detail } = req.body || {};
   if (!['post', 'comment', 'user'].includes(targetType)) {
     return res.status(400).json({ error: '举报对象类型不正确' });
@@ -1245,7 +1254,7 @@ app.get('/api/admin/logs', auth, requireAdmin, (req, res) => {
   res.json({ logs: list });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version: '2.0.0', schema: db.SCHEMA_VERSION }));
+app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version: '2.0.1', schema: db.SCHEMA_VERSION }));
 
 // 404（API）
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
@@ -1257,12 +1266,16 @@ app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') return res.status(413).json({ error: '请求体过大' });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: '请求格式错误' });
   console.error('[error]', req.method, req.path, err.status || '', err.message);
-  if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
   res.status(500).json({ error: '服务器错误，请稍后重试' });
 });
 
 const server = app.listen(PORT, () => {
   console.log(`${APP_NAME} 已启动：http://localhost:${PORT}`);
+  const hasSeedDemo = db.data.users.some((u) => ['demo', 'test', 'orange', 'awei'].includes(u.username));
+  if (hasSeedDemo) {
+    console.warn('[安全提示] 当前存在内置演示账号（demo/test/orange/awei，密码公开）。公网部署前请清空 data/ 重新初始化，或用管理员账号处理。');
+    secLog('seed_demo_accounts_present');
+  }
 });
 server.requestTimeout = 30e3; // 请求处理超时
 server.headersTimeout = 31e3; // 防慢速 HTTP 攻击（必须略大于 requestTimeout）
