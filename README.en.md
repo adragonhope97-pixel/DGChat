@@ -14,6 +14,8 @@
 
 简体中文 | **English** | [繁體中文（臺灣）](README.zh-TW.md)
 
+> **Current version v2.0** · See [CHANGELOG.md](CHANGELOG.md) for the full changelog
+
 ---
 
 ## ✨ Features
@@ -38,6 +40,28 @@
 - **Universal screen adaptation**: safe areas, single-row scrolling on narrow screens, compact layouts for ultra-narrow and landscape modes, immunity to system font scaling — from small phones to desktop browsers
 - **PWA**: installable on desktop / home screen, Service Worker with network-first caching and a minimal offline page
 - **Apple-style motion**: cubic-bezier easing throughout, with focus-in card entrance animations
+
+---
+
+## 🆕 What's New in 2.0
+
+### Discovery & social
+- **Discover tab** (fourth bottom tab): recommended users / latest posts / trending posts
+- **User search** by username and nickname with interest filtering; up to 8 **interest tags** per user
+- **User recommendations** from shared interests + activity, each with a reason label
+- **Follow system**: follow / unfollow, following & follower lists; followed users leave the recommendation pool
+- **Trending** uses real interaction data: likes×3 + comments×2 + 7-day views×0.1
+
+### Privacy & safety
+- **Post visibility**: public / only-me, enforced server-side across list, detail, search, recommendations, likes and comments
+- **User blocking**: blocked users can't see each other anywhere (including search), can't follow or DM each other; manageable block list
+- **Reports & moderation**: report posts/comments/users → admin actions (dismiss/hide/delete/restrict/ban) → every action logged
+- **Account states**: active/restricted/banned with immediate session revocation; rate limits on auth, comment and report endpoints
+
+### Creator & operations tools
+- **Creator center**: views/likes/comments/favorites stats + 7-day real trend chart + drafts (save, edit, publish, delete)
+- **Admin console** (admin-only entry): user management, report handling, operations dashboard, action logs; high-risk actions require confirmation and are logged
+- **Honest metrics**: views = non-author detail opens; trends are daily increments
 
 ---
 
@@ -334,11 +358,34 @@ All endpoints are prefixed with `/api`; authenticated calls pass `Authorization:
 | GET | `/api/me` · `/api/me/favorites` | My profile / my favorites |
 | POST / DELETE | `/api/me/avatar` | Upload / remove avatar |
 
-Full fields and behavior live in `server/server.js` (commented).
+**New in 2.0:**
+
+| Method | Path | Description |
+| --- | --- | --- |
+| PUT | `/api/me/profile` | Update nickname / bio / interests |
+| GET | `/api/users/:id` | Public profile (with follow state) |
+| GET | `/api/discover/users?q=&interest=` | User search |
+| GET | `/api/discover/recommendations` | User recommendations |
+| GET | `/api/discover/latest` · `/api/discover/hot` | Latest / trending posts |
+| POST / DELETE | `/api/users/:id/follow` | Follow / unfollow |
+| GET | `/api/me/following` · `/api/me/followers` | Following / followers |
+| POST / DELETE | `/api/users/:id/block` | Block / unblock |
+| GET | `/api/me/blocked` | Block list |
+| POST | `/api/reports` | Report a post / comment / user |
+| GET | `/api/me/creator` | Creator center (stats + drafts + trend) |
+| GET | `/api/admin/users` · `/api/admin/reports` | User management / reports (admin) |
+| POST | `/api/admin/users/:id/status` · `/api/admin/reports/:id/handle` | Account status / report handling (admin) |
+| GET | `/api/admin/stats` · `/api/admin/logs` | Operations stats / logs (admin) |
+
+Full fields and behavior live in `server/server.js` (commented). Permission tests: `node --test tests/`.
 
 ---
 
 ## 📄 Notes
+
+### Version
+
+Current version **v2.0.0** (data schema v2, existing data migrates automatically with backups in `data/migrations/`). See [CHANGELOG.md](CHANGELOG.md).
 
 ### Feedback & Contact
 

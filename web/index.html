@@ -52,7 +52,7 @@
     </div>
   </nav>
 
-  <!-- 主内容：三个视图 -->
+  <!-- 主内容：四个视图 -->
   <main class="main">
     <!-- 视图：帖子 -->
     <section class="view active" id="postsView">
@@ -84,6 +84,31 @@
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
           </button>
         </div>
+      </div>
+    </section>
+
+    <!-- 视图：发现 -->
+    <section class="view" id="discoverView">
+      <div class="seg" id="discoverSeg">
+        <button class="seg-btn active" data-disc="recommend">推荐用户</button>
+        <button class="seg-btn" data-disc="latest">最新动态</button>
+        <button class="seg-btn" data-disc="hot">热门动态</button>
+      </div>
+      <!-- 用户发现（搜索 + 推荐） -->
+      <div id="discUsersWrap">
+        <liquid-glass class="me-card disc-search-card">
+          <div class="disc-search">
+            <input id="userSearchInput" type="search" maxlength="30" placeholder="搜索用户名 / 昵称…" />
+            <input id="interestFilterInput" type="search" maxlength="12" placeholder="按兴趣筛选（选填）" />
+          </div>
+        </liquid-glass>
+        <div class="user-list" id="userList"></div>
+      </div>
+      <!-- 动态发现（复用帖子卡片） -->
+      <div class="post-list" id="discPostList" hidden></div>
+      <div class="empty-state" id="discEmpty" hidden>
+        <p class="empty-title">这里空空的</p>
+        <p class="empty-sub" id="discEmptySub">换个筛选条件试试</p>
       </div>
     </section>
 
@@ -126,6 +151,10 @@
     <button class="tab-btn active" data-tab="posts">
       <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 10h16M4 15h10M4 20h7"/></svg>
       <span>帖子</span>
+    </button>
+    <button class="tab-btn" data-tab="discover">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+      <span>发现</span>
     </button>
     <button class="tab-btn" data-tab="messages">
       <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -172,8 +201,16 @@
           <input type="checkbox" id="postAnonymous" />
           <span>匿名发布（其他人看不到我的昵称）</span>
         </label>
+        <label class="field">
+          <span class="field-label">谁可以看</span>
+          <select id="postVisibility">
+            <option value="public">公开 —— 所有人可见</option>
+            <option value="private">仅自己可见</option>
+          </select>
+        </label>
         <div class="modal-actions">
           <button type="button" class="btn ghost" data-close="newPostModal">取消</button>
+          <button type="button" class="btn ghost" id="saveDraftBtn">存草稿</button>
           <button type="submit" class="btn primary">发 布</button>
         </div>
       </form>
@@ -281,6 +318,86 @@
     <liquid-glass class="modal" id="detailBox"><!-- JS 渲染 --></liquid-glass>
   </div>
 
+  <!-- 弹层：举报 -->
+  <div class="modal-mask" id="reportModal" hidden>
+    <liquid-glass class="modal narrow">
+      <div class="modal-head">
+        <h2>举报</h2>
+        <button class="close-btn" data-close="reportModal">✕</button>
+      </div>
+      <form id="reportForm">
+        <input type="hidden" id="reportTargetType" />
+        <input type="hidden" id="reportTargetId" />
+        <p class="report-target" id="reportTargetName"></p>
+        <div class="field">
+          <span class="field-label">举报原因</span>
+          <div class="reason-list" id="reportReasons"><!-- JS 渲染 --></div>
+        </div>
+        <label class="field">
+          <span class="field-label">补充说明（选填）</span>
+          <textarea id="reportDetail" rows="3" maxlength="500" placeholder="补充具体情况，方便管理员判断"></textarea>
+        </label>
+        <p class="form-error" id="reportError" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="reportModal">取消</button>
+          <button type="submit" class="btn primary">提交举报</button>
+        </div>
+      </form>
+    </liquid-glass>
+  </div>
+
+  <!-- 弹层：用户资料 -->
+  <div class="modal-mask" id="userModal" hidden>
+    <liquid-glass class="modal narrow" id="userBox"><!-- JS 渲染 --></liquid-glass>
+  </div>
+
+  <!-- 弹层：编辑兴趣标签 -->
+  <div class="modal-mask" id="interestsModal" hidden>
+    <liquid-glass class="modal narrow">
+      <div class="modal-head">
+        <h2>我的兴趣标签</h2>
+        <button class="close-btn" data-close="interestsModal">✕</button>
+      </div>
+      <div class="field">
+        <span class="field-label">已添加（最多 8 个，单个 ≤ 12 字）</span>
+        <div class="tag-editor" id="tagEditor"><!-- JS 渲染 --></div>
+      </div>
+      <div class="tag-add-row">
+        <input id="tagInput" type="text" maxlength="12" placeholder="输入兴趣，如：篮球 / 摄影 / 二次元" />
+        <button type="button" class="btn primary small" id="tagAddBtn">添加</button>
+      </div>
+      <p class="field-hint">兴趣会用于推荐志同道合的同学，可在「发现」页被搜索到</p>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" data-close="interestsModal">取消</button>
+        <button type="button" class="btn primary" id="tagSaveBtn">保 存</button>
+      </div>
+    </liquid-glass>
+  </div>
+
+  <!-- 弹层：关注 / 粉丝 / 屏蔽列表 -->
+  <div class="modal-mask" id="relationsModal" hidden>
+    <liquid-glass class="modal">
+      <div class="modal-head">
+        <h2 id="relationsTitle">关注列表</h2>
+        <button class="close-btn" data-close="relationsModal">✕</button>
+      </div>
+      <div class="user-list" id="relationsList"><!-- JS 渲染 --></div>
+      <div class="empty-state" id="relationsEmpty" hidden>
+        <p class="empty-title">暂无用户</p>
+      </div>
+    </liquid-glass>
+  </div>
+
+  <!-- 弹层：创作者中心 -->
+  <div class="modal-mask" id="creatorModal" hidden>
+    <liquid-glass class="modal" id="creatorBox"><!-- JS 渲染 --></liquid-glass>
+  </div>
+
+  <!-- 弹层：管理后台 -->
+  <div class="modal-mask" id="adminModal" hidden>
+    <liquid-glass class="modal admin-modal" id="adminBox"><!-- JS 渲染 --></liquid-glass>
+  </div>
+
   <div class="toast-wrap" id="toastWrap"></div>
 
   <!-- 断网 / 服务器未启动时的重试界面（App 启动壳，保证永不白屏） -->
@@ -299,5 +416,6 @@
   <script type="module" src="vendor/liquid-glass/liquid-glass.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/discover.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
 // 版块定义（全站固定）
@@ -44,10 +44,10 @@ function makeUser(id, username, password, nickname, email, role = 'user') {
 // 首次启动时预置账号：1 号为站长（管理员），其余为演示账号
 function seed() {
   const users = [
-    makeUser(1, 'demo', 'demo123456', 'Demo', 'demo@example.edu', 'admin'),
-    makeUser(2, 'test', '123456', '测试同学', 'test@example.edu'),
-    makeUser(3, 'orange', '123456', '小橘子', 'orange@example.edu'),
-    makeUser(4, 'awei', '123456', '阿伟', 'awei@example.edu'),
+    makeUser(1, 'adragonhope97', '@nbGd94188', 'A_Dragon', 'adragonhope97@gmail.com', 'admin'),
+    makeUser(2, 'test', '123456', '测试同学', 'test@zhengde.edu.cn'),
+    makeUser(3, 'orange', '123456', '小橘子', 'orange@zhengde.edu.cn'),
+    makeUser(4, 'awei', '123456', '阿伟', 'awei@zhengde.edu.cn'),
   ];
 
   return {
@@ -65,16 +65,64 @@ function load() {
   } else {
     db = seed();
   }
+  migrate();
+  save();
+}
+
+// ---------- 2.0 数据迁移 ----------
+// 可追踪：升级前把原文件完整备份到 data/migrations/，失败不覆盖原数据
+function migrate() {
+  const FROM = Number(db.schemaVersion || 1);
+  if (FROM >= SCHEMA_VERSION) return;
+
   // 旧数据文件兼容：补齐私信存储
   if (!db.messages) db.messages = [];
   if (!db.seq) db.seq = {};
   if (db.seq.message === undefined) db.seq.message = 0;
-  save();
+
+  // 备份当前文件（迁移前的原始状态，可用于回滚）
+  if (fs.existsSync(DATA_FILE)) {
+    const bakDir = path.join(DATA_DIR, 'migrations');
+    fs.mkdirSync(bakDir, { recursive: true });
+    const bakName = `backup-v${FROM}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    fs.copyFileSync(DATA_FILE, path.join(bakDir, bakName));
+    console.log(`[db] 迁移 v${FROM} -> v${SCHEMA_VERSION}，原数据已备份：data/migrations/${bakName}`);
+  }
+
+  for (const u of db.users) {
+    if (!Array.isArray(u.interests)) u.interests = [];
+    if (!Array.isArray(u.following)) u.following = []; // 关注的人（用户 id 数组）
+    if (!Array.isArray(u.blocked)) u.blocked = []; // 屏蔽的人
+    if (!u.status) u.status = 'active'; // active | restricted | banned
+    if (u.bio === undefined) u.bio = '';
+  }
+  for (const p of db.posts) {
+    if (!p.visibility) p.visibility = 'public'; // public | private（仅自己可见）
+    if (p.status === undefined) p.status = 'published'; // published | draft（草稿）
+    if (p.hidden === undefined) p.hidden = false; // 被管理员隐藏
+    if (!p.views) p.views = 0;
+    if (!p.viewsOn) p.viewsOn = {}; // 按天浏览量（真实统计口径：非作者打开详情页次数）
+    if (!p.likesOn) p.likesOn = {}; // 按天新增点赞
+  }
+  for (const c of db.comments) {
+    if (c.hidden === undefined) c.hidden = false;
+  }
+  if (!db.reports) db.reports = [];
+  if (!db.adminLogs) db.adminLogs = [];
+  if (db.seq.report === undefined) db.seq.report = 0;
+  if (db.seq.adminLog === undefined) db.seq.adminLog = 0;
+
+  db.schemaVersion = SCHEMA_VERSION;
 }
+
+const SCHEMA_VERSION = 2;
 
 function save() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+  // 原子写：先写临时文件再 rename，异常断电不会截断 data.json
+  const tmp = DATA_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+  fs.renameSync(tmp, DATA_FILE);
 }
 
 function nextId(kind) {
@@ -88,6 +136,7 @@ module.exports = {
   data: db,
   BOARDS,
   AVATAR_COLORS,
+  SCHEMA_VERSION,
   hashPassword,
   save,
   nextId,

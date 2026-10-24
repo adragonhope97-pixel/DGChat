@@ -381,6 +381,9 @@ function postCardHtml(p) {
             ${authorName(p.author, p.anonymous)}
             ${p.anonymous ? '<span class="board-tag" style="color:#8b968f;background:#eef1ef">匿名</span>' : ''}
             ${p.isMine ? '<span class="mine-tag">我</span>' : ''}
+            ${p.status === 'draft' ? '<span class="state-tag draft-tag">草稿</span>' : ''}
+            ${p.visibility === 'private' ? '<span class="state-tag private-tag">仅自己</span>' : ''}
+            ${p.hidden ? '<span class="state-tag hidden-tag">已隐藏</span>' : ''}
           </div>
           <div class="post-time">${timeAgo(p.createdAt)}</div>
         </div>
@@ -474,7 +477,7 @@ async function deletePost(postId, fromDetail = false) {
 // Esc 关闭最上层的弹窗
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  for (const id of ['detailModal', 'editPostModal', 'newPostModal', 'authModal', 'dmModal']) {
+  for (const id of ['adminModal', 'creatorModal', 'relationsModal', 'interestsModal', 'userModal', 'reportModal', 'detailModal', 'editPostModal', 'newPostModal', 'authModal', 'dmModal']) {
     const mask = $('#' + id);
     if (mask && !mask.hidden) {
       mask.hidden = true;
@@ -485,11 +488,15 @@ document.addEventListener('keydown', (e) => {
 
 // ---------- 发帖 ----------
 
+let newPostDraftMode = false;
+
 async function openNewPostModal() {
   if (!me) {
     toast('发帖前请先登录', 'error');
     return openAuthModal();
   }
+  newPostDraftMode = false;
+  $('#postVisibility').value = 'public';
   const sel = $('#postBoard');
   sel.innerHTML = boards.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
   if (boards.some((b) => b.id === currentBoard)) sel.value = currentBoard;
@@ -508,9 +515,12 @@ $('#newPostForm').addEventListener('submit', async (e) => {
   fd.append('title', $('#postTitle').value.trim());
   fd.append('content', $('#postContent').value.trim());
   fd.append('anonymous', $('#postAnonymous').checked);
+  fd.append('visibility', $('#postVisibility').value);
+  fd.append('draft', newPostDraftMode ? 'true' : 'false');
   newPicker.files().forEach((f) => fd.append('images', f));
   try {
     await api('/posts', { method: 'POST', body: fd });
+    newPostDraftMode = false;
     closeModal('newPostModal');
     toast('发布成功！');
     currentBoard = fd.get('board');
@@ -544,7 +554,7 @@ function renderDetail(p, comments) {
     </div>
     <span class="detail-board-tag">${escapeHtml(p.boardName)}</span>
     <h1 class="detail-title">${escapeHtml(p.title)}</h1>
-    <div class="detail-author">
+    <div class="detail-author${p.author && !p.isMine ? ' author-link' : ''}" ${p.author && !p.isMine ? `data-uid="${p.author.id}"` : ''}>
       ${avatarHtml(p.author, p.anonymous)}
       <div>
         <div class="author-name">${authorName(p.author, p.anonymous)} ${p.isMine ? '<span class="mine-tag">我</span>' : ''}</div>
@@ -604,6 +614,13 @@ function renderDetail(p, comments) {
   if (dmBtn) {
     dmBtn.addEventListener('click', () => openDmModal(Number(dmBtn.dataset.uid), dmBtn.dataset.name));
   }
+  const authorLink = box.querySelector('.detail-author.author-link');
+  if (authorLink) {
+    authorLink.addEventListener('click', () => openUserModal(Number(authorLink.dataset.uid)));
+  }
+  box.querySelectorAll('.act-report').forEach((btn) => {
+    btn.addEventListener('click', () => openReportModal(btn.dataset.type, Number(btn.dataset.id)));
+  });
   const editBtn = box.querySelector('.act-edit-detail');
   if (editBtn) {
     editBtn.addEventListener('click', () => {
@@ -626,6 +643,7 @@ function renderDetail(p, comments) {
       }
     });
   });
+  if (window.bindCommentReports) window.bindCommentReports(box);
   const commentSubmit = box.querySelector('#commentSubmit');
   if (commentSubmit) {
     commentSubmit.addEventListener('click', async () => {
@@ -660,6 +678,7 @@ function commentHtml(c) {
         <div class="comment-head">
           <span class="comment-author">${authorName(c.author, c.anonymous)}</span>
           ${c.canDelete ? `<button class="comment-del" data-id="${c.id}">删除</button>` : ''}
+          ${c.canReport && !c.hidden ? `<button class="comment-report" data-id="${c.id}">举报</button>` : ''}
           <span class="comment-time">${timeAgo(c.createdAt)}</span>
         </div>
         <div class="comment-content">${escapeHtml(c.content)}</div>
@@ -774,7 +793,7 @@ function detailImagesHtml(p) {
 let activeTab = 'posts';
 
 function switchTab(tab) {
-  if (tab !== 'posts' && !me) {
+  if ((tab === 'messages' || tab === 'me') && !me) {
     toast('请先登录', 'error');
     return openAuthModal();
   }
@@ -787,6 +806,7 @@ function switchTab(tab) {
   moveTabInd(true); // 胶囊拉伸-收缩变形
   placeFloating();
   if (tab === 'messages') loadConversations();
+  if (tab === 'discover') loadDiscover();
   if (tab === 'me') {
     renderMeProfile();
     renderBgPicker();
@@ -830,9 +850,13 @@ async function renderMeProfile() {
         <div class="me-stat"><b>${stats.posts}</b><span>帖子</span></div>
         <div class="me-stat"><b>${stats.likesReceived}</b><span>获赞</span></div>
         <div class="me-stat"><b>${stats.favorites}</b><span>收藏</span></div>
+        <div class="me-stat"><b id="meFollowerCount">${stats.followers ?? 0}</b><span>粉丝</span></div>
+        <div class="me-stat"><b id="meFollowingCount">${stats.following ?? 0}</b><span>关注</span></div>
       </div>
+      <div class="me-interests" id="meInterests"></div>
     </liquid-glass>`;
   bindAvatarSettings();
+  if (window.bindMeExtras) window.bindMeExtras();
 }
 
 function setMeSection(section) {

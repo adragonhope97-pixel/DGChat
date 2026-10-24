@@ -1,7 +1,7 @@
 {
   "name": "dgchat",
-  "version": "0.2.0",
-  "description": "DGChat（校园墙）—— 校园论坛（网页版，后续扩展安卓/iOS 共用同一套 API）",
+  "version": "2.0.0",
+  "description": "DGChat（正德校园墙）—— 校园论坛（网页版，后续扩展安卓/iOS 共用同一套 API）",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
