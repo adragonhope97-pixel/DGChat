@@ -32,6 +32,8 @@ jobs:
       - name: 编译 Debug APK（可直接安装）
         run: |
           cd android
+          # 规范化 gradlew 换行（Windows 导出可能带 CRLF，Linux 下 shebang 会失效）
+          sed -i 's/$//' gradlew
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
