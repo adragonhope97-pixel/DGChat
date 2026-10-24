@@ -635,6 +635,11 @@
         location.reload();
       });
       $('#duoSend').addEventListener('click', sendMsg);
+    $('#duoDetailExit').addEventListener('click', () => {
+      state.postDetail = null;
+      $('#duoDetailBody').innerHTML = '<div class="duo-empty">从左侧选择一条动态查看详情</div>';
+      if (state.mode === 'single' && state.tab === 'posts') document.body.dataset.duoPane = 'list';
+    });
     $('#duoThreadExit').addEventListener('click', () => {
       state.threadPartner = null;
       state.threadReplyTo = null;

@@ -43,7 +43,10 @@
       <div class="duo-pane-scroll" id="duoPostList"></div>
     </section>
     <section class="duo-pane" id="duoDetailPane" data-pane="detail">
-      <div class="duo-pane-head">动态详情</div>
+      <div class="duo-pane-head duo-thread-head">
+        <span>动态详情</span>
+        <button class="duo-thread-exit" id="duoDetailExit" title="退出详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+      </div>
       <div class="duo-pane-scroll" id="duoDetailBody">
         <div class="duo-empty">从左侧选择一条动态查看详情</div>
       </div>
@@ -66,7 +69,7 @@
       </div>
       <div class="duo-reply-bar" id="duoReplyBar" hidden>
         <span id="duoReplyPreview"></span>
-        <button id="duoReplyCancel">✕</button>
+        <button id="duoReplyCancel"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="duo-input-bar">
         <textarea id="duoMsgInput" rows="1" maxlength="2000" placeholder="发消息…"></textarea>
@@ -117,7 +120,7 @@
   <!-- 发帖 -->
   <div class="duo-mask" id="duoComposeModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b id="duoComposeSheetTitle">发布动态</b><button class="duo-close" data-close="duoComposeModal">✕</button></div>
+      <div class="duo-sheet-head"><b id="duoComposeSheetTitle">发布动态</b><button class="duo-close" data-close="duoComposeModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <form id="duoComposeForm">
         <select id="duoComposeBoard" class="duo-field"></select>
         <input id="duoComposeTitle" class="duo-field" type="text" maxlength="60" placeholder="标题（最多 60 字）" required />
@@ -143,7 +146,7 @@
   <!-- 搜索 -->
   <div class="duo-mask" id="duoSearchModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>搜索</b><button class="duo-close" data-close="duoSearchModal">✕</button></div>
+      <div class="duo-sheet-head"><b>搜索</b><button class="duo-close" data-close="duoSearchModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="duo-row">
         <input id="duoSearchQuery" class="duo-field" type="search" maxlength="60" placeholder="用户 / 动态 / #话题#" />
         <button class="duo-btn primary" id="duoSearchGo">搜索</button>
@@ -161,7 +164,7 @@
   <!-- 通知 -->
   <div class="duo-mask" id="duoNotifModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>通知中心</b><button class="duo-btn small" id="duoNotifReadAll">全部已读</button><button class="duo-close" data-close="duoNotifModal">✕</button></div>
+      <div class="duo-sheet-head"><b>通知中心</b><button class="duo-btn small" id="duoNotifReadAll">全部已读</button><button class="duo-close" data-close="duoNotifModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div id="duoNotifList"></div>
     </div>
   </div>
@@ -169,7 +172,7 @@
   <!-- 收藏到文件夹 -->
   <div class="duo-mask" id="duoFolderModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>收藏到…</b><button class="duo-close" data-close="duoFolderModal">✕</button></div>
+      <div class="duo-sheet-head"><b>收藏到…</b><button class="duo-close" data-close="duoFolderModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div id="duoFolderList" class="duo-folder-list"></div>
     </div>
   </div>
@@ -177,7 +180,7 @@
   <!-- 话题详情 -->
   <div class="duo-mask" id="duoTopicModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b id="duoTopicName">#话题</b><button class="duo-close" data-close="duoTopicModal">✕</button></div>
+      <div class="duo-sheet-head"><b id="duoTopicName">#话题</b><button class="duo-close" data-close="duoTopicModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div id="duoTopicPosts"></div>
     </div>
   </div>
@@ -185,7 +188,7 @@
   <!-- 隐私与互动 -->
   <div class="duo-mask" id="duoPrivacyModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>隐私与互动</b><button class="duo-close" data-close="duoPrivacyModal">✕</button></div>
+      <div class="duo-sheet-head"><b>隐私与互动</b><button class="duo-close" data-close="duoPrivacyModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <label class="duo-check"><input type="checkbox" id="duoPrivacyPrivate" /><span>私密账号（动态仅关注者可见，关注需审批）</span></label>
       <label class="duo-field-label">谁可以给我发私信</label>
       <select id="duoPrivacyDm" class="duo-field"><option value="everyone">所有人</option><option value="following">我关注的人</option></select>
@@ -199,7 +202,7 @@
   <!-- 收藏夹管理 -->
   <div class="duo-mask" id="duoFavMgrModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>我的收藏</b><button class="duo-close" data-close="duoFavMgrModal">✕</button></div>
+      <div class="duo-sheet-head"><b>我的收藏</b><button class="duo-close" data-close="duoFavMgrModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="duo-row" id="duoFavMgrFolders"></div>
       <div id="duoFavMgrPosts"></div>
       <button class="duo-btn wide" id="duoFavMgrMore" hidden>加载更多</button>
@@ -209,7 +212,7 @@
   <!-- 账号安全 -->
   <div class="duo-mask" id="duoSecurityModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>账号安全</b><button class="duo-close" data-close="duoSecurityModal">✕</button></div>
+      <div class="duo-sheet-head"><b>账号安全</b><button class="duo-close" data-close="duoSecurityModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div id="duoSecurityBody"></div>
     </div>
   </div>
@@ -222,7 +225,7 @@
   <!-- 兴趣标签编辑 -->
   <div class="duo-mask" id="duoInterestsModal" hidden>
     <div class="duo-sheet">
-      <div class="duo-sheet-head"><b>我的兴趣标签</b><button class="duo-close" data-close="duoInterestsModal">✕</button></div>
+      <div class="duo-sheet-head"><b>我的兴趣标签</b><button class="duo-close" data-close="duoInterestsModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="duo-tag-editor" id="duoTagEditor"></div>
       <div class="duo-row">
         <input id="duoTagInput" class="duo-field" type="text" maxlength="12" placeholder="输入兴趣，如：篮球 / 摄影" />

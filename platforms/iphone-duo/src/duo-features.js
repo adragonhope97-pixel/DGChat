@@ -328,7 +328,10 @@
     $('#duoComposeSubmit').addEventListener('click', () => submitCompose(false));
     $('#duoComposeDraft').addEventListener('click', () => submitCompose(true));
     ['input', 'change'].forEach((evt) => $('#duoComposeForm').addEventListener(evt, scheduleComposeDraftSave));
-    // 弹窗遮罩关闭
+    // 弹窗关闭键（全局绑定，修复关闭键无响应）+ 遮罩点击关闭
+    $$('[data-close]').forEach((btn) =>
+      btn.addEventListener('click', () => closeModal(btn.dataset.close))
+    );
     $$('.duo-mask').forEach((m) =>
       m.addEventListener('click', (e) => {
         if (e.target === m) m.hidden = true;
@@ -523,7 +526,7 @@
       const u = data.user;
       const box = $('#duoUserBox');
       box.innerHTML = `
-        <div class="duo-sheet-head"><b>个人资料</b><button class="duo-close" data-close="duoUserModal">✕</button></div>
+        <div class="duo-sheet-head"><b>个人资料</b><button class="duo-close" data-close="duoUserModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
         <div class="duo-item-inner">
           ${DuoPanes.avatarHtml(u)}
           <div class="duo-item-body">
@@ -623,7 +626,7 @@
     try {
       const data = await DuoAPI.call('/api/me/creator');
       box.innerHTML = `
-        <div class="duo-sheet-head"><b>创作者中心</b><button class="duo-close" data-close="duoCreatorModal">✕</button></div>
+        <div class="duo-sheet-head"><b>创作者中心</b><button class="duo-close" data-close="duoCreatorModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
         <div class="duo-me-stats">
           <span><b>${Number(data.totals.views)}</b>浏览</span>
           <span><b>${Number(data.totals.likes)}</b>获赞</span>
@@ -674,7 +677,7 @@
   async function openFollowing() {
     openModal('duoUserModal');
     const box = $('#duoUserBox');
-    box.innerHTML = '<div class="duo-sheet-head"><b>关注列表</b><button class="duo-close" data-close="duoUserModal">✕</button></div><div class="duo-empty">加载中…</div>';
+    box.innerHTML = '<div class="duo-sheet-head"><b>关注列表</b><button class="duo-close" data-close="duoUserModal"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="duo-empty">加载中…</div>';
     try {
       const data = await DuoAPI.call('/api/me/following');
       box.innerHTML += data.users.length
