@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!-- DGChat iPhone Duo 独立适配版入口（本目录专有，独立于 web/index.html）
+     运行方式见 README.md；API 通过 config/serve.mjs 代理到现有 DGChat 后端 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>DGChat Duo</title>
+  <link rel="stylesheet" href="styles/duo.css" />
+</head>
+<body data-duo-mode="single" data-duo-tab="posts">
+  <header class="duo-topbar">
+    <img class="duo-logo" src="../../web/assets/logo.png" alt="" onerror="this.style.display='none'" />
+    <span class="duo-title">DGChat Duo</span>
+    <div class="duo-tabs">
+      <button class="duo-tab active" data-tab="posts" id="duoTabPosts">动态</button>
+      <button class="duo-tab" data-tab="chat" id="duoTabChat">聊天<span class="duo-unread" id="duoUnread" hidden></span></button>
+    </div>
+    <span class="duo-state-label" id="duoStateLabel"></span>
+    <button class="duo-tab" id="duoLogout" hidden>退出</button>
+  </header>
+
+  <!-- 登录（独立会话，与主站令牌隔离） -->
+  <div class="duo-login" id="duoLogin" hidden>
+    <form id="duoLoginForm">
+      <b>DGChat Duo 登录</b>
+      <input id="duoLoginUser" type="text" autocomplete="username" placeholder="用户名或邮箱" required />
+      <input id="duoLoginPass" type="password" autocomplete="current-password" placeholder="密码" required />
+      <p class="duo-login-error" id="duoLoginError" hidden></p>
+      <button type="submit">登 录</button>
+    </form>
+  </div>
+
+  <!-- 双栏舞台：左列表 + 右详情（展开态两栏同显，闭合态单栏切换） -->
+  <main class="duo-stage" id="duoApp" hidden>
+    <!-- 动态模块 -->
+    <section class="duo-pane" id="duoPostsPane" data-pane="list">
+      <div class="duo-pane-head">动态列表</div>
+      <div class="duo-pane-scroll" id="duoPostList"></div>
+    </section>
+    <section class="duo-pane" id="duoDetailPane" data-pane="detail">
+      <div class="duo-pane-head">动态详情</div>
+      <div class="duo-pane-scroll" id="duoDetailBody">
+        <div class="duo-empty">从左侧选择一条动态查看详情</div>
+      </div>
+    </section>
+
+    <!-- 聊天模块 -->
+    <section class="duo-pane" id="duoChatPane" data-pane="list">
+      <div class="duo-pane-head">会话列表</div>
+      <div class="duo-pane-scroll" id="duoConvList"></div>
+    </section>
+    <section class="duo-pane" id="duoThreadPane" data-pane="detail">
+      <div class="duo-pane-head" id="duoThreadName">对话</div>
+      <div class="duo-pane-scroll" id="duoMsgList">
+        <div class="duo-empty">从左侧选择一个会话</div>
+      </div>
+      <div class="duo-input-bar">
+        <textarea id="duoMsgInput" rows="1" maxlength="2000" placeholder="发消息…"></textarea>
+        <button id="duoSend">发送</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="config/duo.config.js"></script>
+  <script src="src/window-state.js"></script>
+  <script src="src/api.js"></script>
+  <script src="components/duo-panes.js"></script>
+  <script src="src/duo-app.js"></script>
+</body>
+</html>

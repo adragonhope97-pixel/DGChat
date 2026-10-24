@@ -1,0 +1,162 @@
+/* DGChat iPhone Duo —— 专属样式
+   设计令牌（颜色/圆角/玻璃质感）取自 web/style.css 并为本目录独立维护（标注来源，避免跨目录耦合）。
+   布局完全由真实窗口尺寸驱动：data-duo-mode 由 src/window-state.js 判定后写入 body。 */
+
+:root {
+  --duo-bg: #0a1c3f;
+  --duo-panel: rgba(255, 255, 255, 0.06);
+  --duo-border: rgba(255, 255, 255, 0.14);
+  --duo-text: #eaf0fb;
+  --duo-text-3: #8fa3c7;
+  --duo-accent: #4f8ef7;
+  --duo-radius: 18px;
+  --duo-safe-top: env(safe-area-inset-top, 0px);
+  --duo-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; } /* 修复 display:flex 覆盖 hidden 的问题 */
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--duo-bg);
+  color: var(--duo-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overflow: hidden;
+}
+
+/* ---------- 顶栏 ---------- */
+.duo-topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(8px + var(--duo-safe-top)) 14px 8px;
+  border-bottom: 1px solid var(--duo-border);
+}
+.duo-logo { width: 30px; height: 30px; border-radius: 9px; }
+.duo-title { font-weight: 700; font-size: 16px; }
+.duo-state-label { font-size: 11px; color: var(--duo-text-3); margin-left: auto; text-align: right; }
+.duo-tabs { display: flex; gap: 6px; }
+.duo-tab {
+  border: 1px solid var(--duo-border); background: var(--duo-panel); color: var(--duo-text);
+  border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+}
+.duo-tab.active { border-color: var(--duo-accent); color: var(--duo-accent); }
+.duo-badge {
+  background: #e8506a; color: #fff; border-radius: 999px; font-size: 10px;
+  padding: 1px 6px; margin-left: 4px;
+}
+.duo-unread { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; border-radius: 999px;
+  background: #e8506a; color: #fff; font-size: 10px; text-align: center; padding: 0 4px; }
+
+/* ---------- 面板骨架：闭合单栏 / 展开双栏 ---------- */
+.duo-stage { display: flex; height: calc(100% - 52px - var(--duo-safe-top)); }
+.duo-pane {
+  flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column;
+  border-right: 1px solid var(--duo-border); overflow: hidden;
+}
+.duo-pane:last-child { border-right: none; }
+.duo-pane-head {
+  padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--duo-text-3);
+  border-bottom: 1px solid var(--duo-border); flex-shrink: 0;
+}
+.duo-pane-scroll { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+
+/* 闭合/窄屏：只显示一个面板（data-duo-pane 指定 list 或 detail） */
+body[data-duo-mode='single'] .duo-pane[data-pane='list'] { display: none; }
+body[data-duo-mode='single'] .duo-pane[data-pane='detail'] { display: none; }
+body[data-duo-mode='single'][data-duo-pane='list'] .duo-pane[data-pane='list'] { display: flex; flex: 1 1 100%; }
+body[data-duo-mode='single'][data-duo-pane='detail'] .duo-pane[data-pane='detail'] { display: flex; flex: 1 1 100%; }
+
+/* 隐藏未激活标签的整组面板 */
+body[data-duo-tab='posts'] #duoChatPane { display: none; }
+body[data-duo-tab='chat'] #duoPostsPane { display: none; }
+body[data-duo-tab='chat'] #duoDetailPane { display: none; }
+body[data-duo-tab='posts'] #duoThreadPane { display: none; }
+
+/* ---------- 列表项 ---------- */
+.duo-item {
+  display: block; margin-bottom: 10px; border: 1px solid var(--duo-border);
+  border-radius: var(--duo-radius); background: var(--duo-panel); cursor: pointer;
+  backdrop-filter: blur(10px) saturate(140%);
+}
+.duo-item:active { transform: scale(0.99); }
+.duo-item-inner { display: flex; gap: 10px; padding: 12px; align-items: flex-start; }
+.duo-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; color: #fff; overflow: hidden;
+}
+.duo-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.duo-avatar.anon { background: #5b6b8c; }
+.duo-item-body { flex: 1; min-width: 0; }
+.duo-item-top { display: flex; justify-content: space-between; gap: 8px; }
+.duo-name { font-weight: 600; font-size: 14px; }
+.duo-time { font-size: 11px; color: var(--duo-text-3); flex-shrink: 0; }
+.duo-title { font-size: 14px; margin-top: 4px; font-weight: 500; }
+.duo-preview, .duo-foot {
+  font-size: 12px; color: var(--duo-text-3); margin-top: 4px;
+  display: flex; gap: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.duo-preview { display: block; }
+.duo-badge { background: #e8506a; color: #fff; border-radius: 999px; font-size: 10px; padding: 1px 6px; align-self: center; }
+
+/* ---------- 详情 ---------- */
+.duo-detail-head { margin-bottom: 8px; }
+.duo-board-tag {
+  font-size: 11px; padding: 2px 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--duo-accent) 15%, transparent); color: var(--duo-accent);
+}
+.duo-detail-title { font-size: 18px; margin: 6px 0 12px; line-height: 1.4; }
+.duo-detail-author { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.duo-detail-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.duo-detail-actions { display: flex; gap: 10px; margin: 14px 0; }
+.duo-btn {
+  border: 1px solid var(--duo-border); background: var(--duo-panel); color: var(--duo-text);
+  border-radius: 999px; padding: 6px 16px; font-size: 13px; cursor: pointer;
+}
+.duo-comments-title { font-size: 13px; color: var(--duo-text-3); margin: 10px 0 8px; }
+.duo-comment { display: flex; gap: 8px; margin-bottom: 10px; }
+.duo-comment .duo-avatar { width: 28px; height: 28px; font-size: 12px; }
+.duo-comment-content { font-size: 13px; line-height: 1.6; margin-top: 2px; word-break: break-word; }
+.duo-empty { text-align: center; color: var(--duo-text-3); font-size: 13px; padding: 24px 0; }
+
+/* ---------- 聊天 ---------- */
+.duo-msg { display: flex; flex-direction: column; margin-bottom: 10px; max-width: 82%; }
+.duo-msg.mine { align-self: flex-end; align-items: flex-end; }
+.duo-msg.theirs { align-self: flex-start; }
+.duo-msg-bubble {
+  padding: 8px 12px; border-radius: 16px; font-size: 14px; line-height: 1.55; word-break: break-word;
+  background: var(--duo-panel); border: 1px solid var(--duo-border);
+}
+.duo-msg.mine .duo-msg-bubble { background: var(--duo-accent); border-color: var(--duo-accent); color: #fff; }
+.duo-msg-bubble.recalled { opacity: 0.6; font-style: italic; }
+.duo-msg .duo-time { margin-top: 3px; }
+.duo-input-bar { display: flex; gap: 8px; padding: 10px 12px calc(10px + var(--duo-safe-bottom)); border-top: 1px solid var(--duo-border); }
+.duo-input-bar textarea {
+  flex: 1; min-height: 38px; max-height: 120px; resize: none; border-radius: 12px;
+  border: 1px solid var(--duo-border); background: var(--duo-panel); color: var(--duo-text);
+  padding: 9px 12px; font-size: 16px; /* ≥16px 防iOS聚焦缩放 */ outline: none; font-family: inherit;
+}
+.duo-input-bar button {
+  border: none; border-radius: 12px; background: var(--duo-accent); color: #fff;
+  font-size: 14px; padding: 0 18px; cursor: pointer;
+}
+
+/* ---------- 登录 ---------- */
+.duo-login { display: flex; align-items: center; justify-content: center; height: 100%; }
+.duo-login form {
+  width: min(320px, 90%); display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--duo-border); border-radius: var(--duo-radius); padding: 22px;
+  background: var(--duo-panel);
+}
+.duo-login input {
+  height: 40px; border-radius: 11px; border: 1px solid var(--duo-border);
+  background: rgba(255,255,255,0.06); color: var(--duo-text); padding: 0 12px; font-size: 16px; outline: none;
+}
+.duo-login button { height: 40px; border: none; border-radius: 11px; background: var(--duo-accent); color: #fff; font-size: 15px; }
+.duo-login-error { color: #ff8a95; font-size: 12.5px; }
+
+/* 键盘弹出：输入条贴住可视底部（visualViewport 已反映在 height 上，dvh 兜底） */
+@supports (height: 100dvh) {
+  .duo-stage { height: calc(100dvh - 52px - var(--duo-safe-top)); }
+}
