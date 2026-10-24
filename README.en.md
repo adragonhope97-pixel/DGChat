@@ -65,6 +65,43 @@
 
 ---
 
+## 📦 Versions & File Locations (1.0 / 2.0)
+
+Both major versions live in this repository as git tags — neither overwrites the other:
+
+| | **v1.0.0** | **v2.0.0** (current main) |
+| --- | --- | --- |
+| Scope | Basic web forum | + Discovery & social / Privacy & safety / Creator & ops tools |
+| Source | `git checkout v1.0.0`, or the Source code zip on the [v1.0.0 Release](https://github.com/adragonhope97-pixel/DGChat/releases/tag/v1.0.0) | `git clone` (default main branch) |
+| Binaries | none (source archive only) | [v2.0.0 Release](https://github.com/adragonhope97-pixel/DGChat/releases/tag/v2.0.0) ships APK / IPA |
+| Data file | schema v1 | schema v2 (existing data auto-migrates on first launch) |
+
+**Key files in v1.0.0** (same paths under that tag):
+
+| File | Role |
+| --- | --- |
+| `server/server.js` | All REST routes: posts / comments / likes & favorites / DMs / avatar |
+| `server/db.js` | JSON data layer, boards, seed data |
+| `web/index.html` | Page skeleton: Posts / Messages / Me views + dialogs |
+| `web/js/app.js` | All frontend logic (single file) |
+| `web/style.css` | Glass design tokens + screen adaptation layer |
+| `web/assets/` · `web/vendor/liquid-glass/` | Icons & backgrounds / liquid glass components |
+
+**Added or changed in v2.0.0:**
+
+| File | Role |
+| --- | --- |
+| `web/js/discover.js` 🆕 | The 2.0 frontend (~700 lines): Discover `loadDiscover()`, user profile `openUserModal()`, reports `openReportModal()`, interest tags, follow/follower/block lists, creator center `openCreatorModal()`, admin console `openAdminModal()` |
+| `web/index.html` | Adds `<section id="discoverView">` (fourth bottom tab "Discover") + 6 new dialogs (report / user profile / interest editor / relations / creator center / admin) + "who can see / save draft" in the compose dialog |
+| `web/js/app.js` | Changes: `switchTab()` wires the Discover tab, `postCardHtml()` draft/private/hidden badges, `openDetail()` report entry & author profile link, `loadConversations()` pinned memo thread |
+| `server/server.js` | +25 endpoints (`/api/discover/*`, `/api/users/:id/(follow|block)`, `/api/reports`, `/api/me/creator`, `/api/admin/*`); permission core near the top: `canViewPost()` (unified visibility check), `blockedPair()`, `requireAdmin()`, `rateLimit()` |
+| `server/db.js` | `migrate()` (schema v1→v2 auto migration, backed up to `data/migrations/`), atomic `save()`, `SCHEMA_VERSION` |
+| `tests/api.test.mjs` 🆕 | 13 permission & security tests (block bypass / cross-user access / admin escalation / rate limits), run with `node --test tests/` |
+| `CHANGELOG.md` 🆕 | Full version history |
+| `data/migrations/` (generated) | Pre-upgrade data backups, restorable |
+
+---
+
 ## 🧱 Tech Stack
 
 | Layer | Technology |
