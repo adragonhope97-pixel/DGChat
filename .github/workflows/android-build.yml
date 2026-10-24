@@ -33,7 +33,7 @@ jobs:
         run: |
           cd android
           # 规范化 gradlew 换行（Windows 导出可能带 CRLF，Linux 下 shebang 会失效）
-          sed -i 's/$//' gradlew
+          sed -i 's/\r$//' gradlew
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
