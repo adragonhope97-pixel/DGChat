@@ -266,7 +266,7 @@ textarea.duo-field { resize: vertical; }
 .duo-tab-pill .duo-unread { position: absolute; top: 3px; right: calc(50% - 26px); }
 .duo-tab-pill .duo-tab-ind {
   top: 4px; bottom: 4px; left: 8px; width: 60px; border: none; border-radius: 999px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--duo-accent) 85%, #fff 15%), color-mix(in srgb, var(--duo-accent) 72%, #0a1630 14%));
+  background: var(--duo-grad, linear-gradient(135deg, color-mix(in srgb, var(--duo-accent) 85%, #fff 15%), color-mix(in srgb, var(--duo-accent) 72%, #0a1630 14%)));
   box-shadow: 0 3px 12px rgba(3,10,26,0.5), inset 0 1px 1px rgba(255,255,255,0.35);
 }
 .duo-tab-ind {

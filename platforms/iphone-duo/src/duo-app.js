@@ -366,19 +366,70 @@
 
   // ---------- 背景（5 预设 + 自定义上传，独立存储 duo_bg） ----------
   const BG_PRESETS = [
-    { id: 'default', name: '波纹', url: 'assets/bg.jpg' },
-    { id: 'aurora', name: '极光', url: 'assets/bg-aurora.jpg' },
-    { id: 'sunset', name: '暮色', url: 'assets/bg-sunset.jpg' },
-    { id: 'forest', name: '翡翠', url: 'assets/bg-forest.jpg' },
-    { id: 'obsidian', name: '曜石', url: 'assets/bg-obsidian.jpg' },
+    { id: 'default', name: '波纹', url: 'assets/bg.jpg', hue: 222 },
+    { id: 'aurora', name: '极光', url: 'assets/bg-aurora.jpg', hue: 222 },
+    { id: 'sunset', name: '暮色', url: 'assets/bg-sunset.jpg', hue: 167 },
+    { id: 'forest', name: '翡翠', url: 'assets/bg-forest.jpg', hue: 16 },
+    { id: 'obsidian', name: '曜石', url: 'assets/bg-obsidian.jpg', hue: 266 },
   ];
-  function applyDuoBg() {
+  // 主题变量：accent 色相随背景（滑块/高亮/角标全站跟随）
+  function applyDuoTheme(hue) {
+    const h = Number(hue) || 222;
+    const root = document.documentElement.style;
+    root.setProperty('--duo-accent', `hsl(${h}, 78%, 60%)`);
+    root.setProperty('--duo-accent-deep', `hsl(${h}, 72%, 46%)`);
+    root.setProperty('--duo-grad', `linear-gradient(135deg, hsl(${h}, 85%, 68%), hsl(${h}, 72%, 46%))`);
+  }
+
+  // 自定义背景取主色：亮部彩色像素的平均色相（暗部会拖偏，忽略）
+  function extractHue(url) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = 24; c.height = 24;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0, 24, 24);
+          const d = ctx.getImageData(0, 0, 24, 24).data;
+          let r = 0, g = 0, b = 0, n = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            const rr = d[i], gg = d[i + 1], bb = d[i + 2];
+            if (Math.max(rr, gg, bb) - Math.min(rr, gg, bb) > 30 && Math.max(rr, gg, bb) > 60) {
+              r += rr; g += gg; b += bb; n++;
+            }
+          }
+          if (!n) return resolve(222);
+          r /= n; g /= n; b /= n;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b), df = mx - mn;
+          let h = 0;
+          if (df) {
+            if (mx === r) h = ((g - b) / df) % 6;
+            else if (mx === g) h = (b - r) / df + 2;
+            else h = (r - g) / df + 4;
+            h = Math.round(h * 60); if (h < 0) h += 360;
+          }
+          resolve(h || 222);
+        } catch { resolve(222); }
+      };
+      img.onerror = () => resolve(222);
+      img.src = url;
+    });
+  }
+
+  async function applyDuoBg() {
     try {
       const pref = JSON.parse(localStorage.getItem('duo_bg') || 'null');
-      const url = pref ? pref.url : BG_PRESETS[0].url;
+      const preset = pref && BG_PRESETS.find((x) => x.id === pref.id);
+      const url = preset ? preset.url : pref ? pref.url : BG_PRESETS[0].url;
       document.body.style.backgroundImage = `linear-gradient(rgba(8,18,40,0.38), rgba(8,18,40,0.52)), url("${url}")`;
       document.body.style.backgroundSize = 'cover';
       document.body.style.backgroundAttachment = 'fixed';
+      if (preset) {
+        applyDuoTheme(preset.hue);
+      } else if (pref && pref.id === 'custom') {
+        applyDuoTheme(await extractHue(url));
+      }
     } catch {}
   }
   function renderBgPicker() {
