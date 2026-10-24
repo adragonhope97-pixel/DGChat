@@ -290,6 +290,10 @@ DGChat/
 
 ## 📄 說明
 
+### 問題回饋
+
+發現 bug 或有功能建議？歡迎寄信到 **gandragon1949@outlook.com**，或到 [Issues](https://github.com/adragonhope97-pixel/DGChat/issues) 頁面提交。
+
 ### 製作名單
 
 | 角色 | 成員 |
