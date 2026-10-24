@@ -58,6 +58,7 @@
   // 切换标签页：posts/chat 为双栏模块，discover/me 为全宽视图
   function setTab(tab) {
     state.tab = tab;
+    document.body.dataset.duoTab = tab; // CSS 面板互斥依赖此属性
     $$('.duo-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     moveTabSlider(tab);
     const isDualModule = tab === 'posts' || tab === 'chat';
@@ -65,6 +66,7 @@
     $('#duoDiscoverView').hidden = tab !== 'discover';
     $('#duoMeView').hidden = tab !== 'me';
     $('#duoPostsPane').hidden = tab !== 'posts';
+    $('#duoChatPane').hidden = tab !== 'chat';
     if (tab === 'posts') {
       $('#duoDetailPane').hidden = false;
       $('#duoThreadPane').hidden = true;
@@ -374,7 +376,7 @@
     try {
       const pref = JSON.parse(localStorage.getItem('duo_bg') || 'null');
       const url = pref ? pref.url : BG_PRESETS[0].url;
-      document.body.style.backgroundImage = `linear-gradient(rgba(10,22,46,0.72), rgba(10,22,46,0.78)), url("${url}")`;
+      document.body.style.backgroundImage = `linear-gradient(rgba(8,18,40,0.38), rgba(8,18,40,0.52)), url("${url}")`;
       document.body.style.backgroundSize = 'cover';
       document.body.style.backgroundAttachment = 'fixed';
     } catch {}
@@ -541,6 +543,7 @@
 
   document.addEventListener('DOMContentLoaded', async () => {
     applyLayout();
+    applyDuoBg();
     window.addEventListener('resize', () => {
       applyLayout();
       moveTabSlider(state.tab);
