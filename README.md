@@ -484,6 +484,24 @@ DGChat/
 
 > 本项目由 A_Dragon 提出需求、把控体验并与 ZCode 结对完成：从网页版基础论坛到三端（Web / Android / iOS）交付的全部功能迭代。
 
+### 开源致谢
+
+本项目站在以下开源项目的肩膀上，感谢这些作者与社区（完整清单与许可声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)）：
+
+| 项目 | 作者 / 维护者 | 许可证 | 链接 |
+| --- | --- | --- | --- |
+| Express | Express.js 团队（OpenJS Foundation） | MIT | [expressjs/express](https://github.com/expressjs/express) |
+| Multer | Express.js 团队 | MIT | [expressjs/multer](https://github.com/expressjs/multer) |
+| Helmet | Evan Hahn 与 helmetjs 社区 | MIT | [helmetjs/helmet](https://github.com/helmetjs/helmet) |
+| express-rate-limit | Nathan Friedly 创建，社区维护 | MIT | [express-rate-limit/express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) |
+| Capacitor | Ionic 团队 | MIT | [ionic-team/capacitor](https://github.com/ionic-team/capacitor) |
+| LiquidGlass-UI | hwyuanzi | MIT | [hwyuanzi/LiquidGlass-UI](https://github.com/hwyuanzi/LiquidGlass-UI) |
+| Gitleaks | Zachary Rice 与 gitleaks 社区 | MIT | [gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) |
+| OSV-Scanner | Google OSV 团队 | Apache-2.0 | [google/osv-scanner](https://github.com/google/osv-scanner) |
+| Semgrep | Semgrep（原 r2c）团队 | LGPL-2.1 | [semgrep/semgrep](https://github.com/semgrep/semgrep) |
+
+评估过但未采用（同样感谢）：[DOMPurify](https://github.com/cure53/DOMPurify)（Cure53，无 HTML 注入汇点故未引入）、[DualPane](https://github.com/JoryShilmover/DualPane)（Jory Shilmover，与 Capacitor 单 WebView 架构不兼容）。
+
 ### 开源与授权
 
 - **字体**：本项目使用系统字体栈（`-apple-system / PingFang SC / 微软雅黑`）。如需苹果 SF Pro 观感，可自行获取授权字体放入 `web/assets/fonts/` 并添加 `@font-face`（SF Pro 为 Apple 专有字体，随本仓库分发需遵守其许可条款）。
