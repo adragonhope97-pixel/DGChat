@@ -330,6 +330,237 @@
     notifTimer = setInterval(refreshBadge, 30000);
   });
 
+
+  // ================= 隐私与互动设置 =================
+  async function openPrivacy() {
+    try {
+      const data = await DuoAPI.me();
+      const st = (data.user.settings || {});
+      $('#duoPrivacyPrivate').checked = !!st.privateAccount;
+      $('#duoPrivacyDm').value = st.dmPolicy || 'everyone';
+      $('#duoPrivacyComment').value = st.commentPolicy || 'everyone';
+      $('#duoPrivacySearch').checked = st.searchHistory !== false;
+      openModal('duoPrivacyModal');
+    } catch (err) {
+      toast21(err.message);
+    }
+  }
+  $('#duoPrivacySave').addEventListener('click', async () => {
+    try {
+      await DuoAPI.call('/api/me/settings', {
+        method: 'PUT',
+        body: {
+          privateAccount: $('#duoPrivacyPrivate').checked,
+          dmPolicy: $('#duoPrivacyDm').value,
+          commentPolicy: $('#duoPrivacyComment').value,
+          searchHistoryEnabled: $('#duoPrivacySearch').checked,
+        },
+      });
+      closeModal('duoPrivacyModal');
+      toast21('隐私设置已保存');
+    } catch (err) {
+      toast21(err.message);
+    }
+  });
+
+  // ================= 收藏夹管理（创建/删除/浏览/取消收藏） =================
+  let favMgr = { folderId: 0, page: 1 };
+  async function openFavManager() {
+    openModal('duoFavMgrModal');
+    await renderFavMgrFolders();
+    await renderFavMgrPosts(0, 1);
+  }
+  async function renderFavMgrFolders() {
+    const data = await DuoAPI.call('/api/me/folders');
+    $('#duoFavMgrFolders').innerHTML =
+      data.folders
+        .map(
+          (f) => `
+        <button class="duo-btn small ${favMgr.folderId === f.id ? 'primary' : ''}" data-fid="${Number(f.id)}">
+          ${esc(f.name)}（${Number(f.count)}）${f.id !== 0 ? '<span class="duo-folder-del" data-del="' + Number(f.id) + '" title="删除"> ×</span>' : ''}
+        </button>`
+        )
+        .join('') + '<button class="duo-btn small" id="duoFavMgrAdd">＋ 新建</button>';
+    $('#duoFavMgrFolders').querySelectorAll('[data-fid]').forEach((b) =>
+      b.addEventListener('click', async (e) => {
+        if (e.target.dataset.del) {
+          if (!confirm('删除该收藏夹？内容会移入默认收藏夹')) return;
+          await DuoAPI.call('/api/me/folders/' + e.target.dataset.del, { method: 'DELETE' });
+          favMgr.folderId = 0;
+          openFavManager();
+          return;
+        }
+        favMgr = { folderId: Number(b.dataset.fid), page: 1 };
+        renderFavMgrFolders();
+        renderFavMgrPosts(favMgr.folderId, 1);
+      })
+    );
+    $('#duoFavMgrAdd').addEventListener('click', async () => {
+      const name = prompt('新收藏夹名称');
+      if (!name) return;
+      try {
+        await DuoAPI.call('/api/me/folders', { method: 'POST', body: { name } });
+        renderFavMgrFolders();
+      } catch (err) {
+        toast21(err.message);
+      }
+    });
+  }
+  async function renderFavMgrPosts(folderId, page) {
+    const body = $('#duoFavMgrPosts');
+    body.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      const data = await DuoAPI.call('/api/me/favorites?folderId=' + folderId + '&page=' + page + '&limit=10');
+      if (!data.posts.length) {
+        body.innerHTML = '<div class="duo-empty">这个收藏夹还是空的</div>';
+        $('#duoFavMgrMore').hidden = true;
+        return;
+      }
+      body.innerHTML = data.posts.map(DuoPanes.postCard).join('');
+      body.querySelectorAll('.duo-post-card').forEach((card) => {
+        const id = Number(card.dataset.id);
+        const rm = document.createElement('button');
+        rm.className = 'duo-btn small';
+        rm.textContent = '取消收藏';
+        rm.style.margin = '0 12px 12px';
+        rm.addEventListener('click', async () => {
+          await DuoAPI.call(`/api/posts/${id}/favorite`, { method: 'DELETE' });
+          toast21('已取消收藏');
+          renderFavMgrPosts(folderId, page);
+        });
+        card.appendChild(rm);
+      });
+      body.querySelectorAll('.duo-post-card').forEach((card) =>
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.duo-btn')) return;
+          closeModal('duoFavMgrModal');
+          window.DuoApp.goPostsAndOpen(Number(card.dataset.id));
+        })
+      );
+      $('#duoFavMgrMore').hidden = data.posts.length < 10;
+      $('#duoFavMgrMore').onclick = () => renderFavMgrPosts(folderId, page + 1);
+    } catch (err) {
+      body.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+
+  // ================= 账号安全（会话列表 / 退出其他设备 / 修改密码） =================
+  async function openSecurity() {
+    openModal('duoSecurityModal');
+    const body = $('#duoSecurityBody');
+    body.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      const data = await DuoAPI.call('/api/me/sessions');
+      body.innerHTML = `
+        <div class="duo-folder-list">
+          ${data.sessions
+            .map(
+              (x) => `
+            <div class="duo-notif">
+              <div class="duo-notif-body">
+                <b>${esc(x.ua)}</b>${x.current ? ' <span class="duo-tag-current">当前设备</span>' : ''}
+                <small>${new Date(x.createdAt).toLocaleString('zh-CN')} · ID ${esc(x.id)}</small>
+              </div>
+              ${x.current ? '' : `<button class="duo-btn small" data-kill="${esc(x.id)}">退出</button>`}
+            </div>`
+            )
+            .join('')}
+        </div>
+        <button class="duo-btn wide" id="duoLogoutOthers">退出其他所有设备</button>
+        <div class="duo-row" style="margin-top:12px">
+          <input id="duoPwdCur" class="duo-field" type="password" placeholder="当前密码" autocomplete="current-password" />
+          <input id="duoPwdNew" class="duo-field" type="password" placeholder="新密码（6-30 位）" autocomplete="new-password" />
+          <button class="duo-btn primary" id="duoPwdSave">修改密码</button>
+        </div>
+        <p class="duo-hint">修改密码后，其他设备将全部退出登录</p>`;
+      body.querySelectorAll('[data-kill]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          try {
+            await DuoAPI.call('/api/me/sessions/' + b.dataset.kill, { method: 'DELETE' });
+            toast21('该设备已退出');
+            openSecurity();
+          } catch (err) {
+            toast21(err.message);
+          }
+        })
+      );
+      $('#duoLogoutOthers').addEventListener('click', async () => {
+        if (!confirm('确定退出其他所有设备？')) return;
+        const r = await DuoAPI.call('/api/me/sessions/logout-others', { method: 'POST' });
+        toast21(`已退出其他 ${r.revoked} 台设备`);
+        openSecurity();
+      });
+      $('#duoPwdSave').addEventListener('click', async () => {
+        try {
+          await DuoAPI.call('/api/me/password', {
+            method: 'PUT',
+            body: { currentPassword: $('#duoPwdCur').value, newPassword: $('#duoPwdNew').value },
+          });
+          toast21('密码已修改，其他设备已退出');
+          closeModal('duoSecurityModal');
+        } catch (err) {
+          toast21(err.message);
+        }
+      });
+    } catch (err) {
+      body.innerHTML = `<div class="duo-empty">${esc(err.message)}</div>`;
+    }
+  }
+
+  // ================= 用户资料（关注/取关/私信） =================
+  async function openUser(uid) {
+    try {
+      const data = await DuoAPI.call('/api/users/' + uid);
+      const u = data.user;
+      const box = $('#duoUserBox');
+      box.innerHTML = `
+        <div class="duo-sheet-head"><b>个人资料</b><button class="duo-close" data-close="duoUserModal">✕</button></div>
+        <div class="duo-item-inner">
+          ${DuoPanes.avatarHtml(u)}
+          <div class="duo-item-body">
+            <div class="duo-name">${esc(u.nickname)}</div>
+            <div class="duo-preview">@${esc(u.username)} · ${Number(u.followerCount)} 粉丝 · ${Number(u.postCount)} 帖子</div>
+            ${u.bio ? `<div class="duo-preview">${esc(u.bio)}</div>` : ''}
+            ${(u.interests || []).length ? `<div class="duo-preview">${u.interests.map(esc).join(' · ')}</div>` : ''}
+          </div>
+        </div>
+        <div class="duo-row">
+          ${u.isMe ? '<span class="duo-hint">这是你自己</span>' : `
+            <button class="duo-btn" id="duoUFollow" data-following="${u.isFollowing ? 1 : 0}">${u.isFollowing ? '取消关注' : '关 注'}</button>
+            <button class="duo-btn" id="duoUDm">私 信</button>
+            <button class="duo-btn" id="duoUMute">${(u.isFollowing === undefined ? 0 : 0) ? '' : '静 音'}</button>`}
+        </div>`;
+      box.querySelector('[data-close]').addEventListener('click', () => closeModal('duoUserModal'));
+      if (!u.isMe) {
+        $('#duoUFollow').addEventListener('click', async (e) => {
+          const following = e.currentTarget.dataset.following === '1';
+          const r = await DuoAPI.call(`/api/users/${uid}/follow`, { method: following ? 'DELETE' : 'POST' });
+          e.currentTarget.dataset.following = r.following ? '1' : '0';
+          e.currentTarget.textContent = r.pending ? '已申请' : r.following ? '取消关注' : '关 注';
+          toast21(r.pending ? '已发送关注申请' : r.following ? '已关注' : '已取消关注');
+        });
+        $('#duoUDm').addEventListener('click', () => {
+          closeModal('duoUserModal');
+          window.DuoApp.goChat();
+          window.DuoApp.openThreadById?.(uid, u.nickname);
+        });
+        $('#duoUMute').addEventListener('click', async () => {
+          try {
+            const muted = (await DuoAPI.call('/api/me/muted')).users.some((x) => x.id === uid);
+            await DuoAPI.call(`/api/users/${uid}/mute`, { method: muted ? 'DELETE' : 'POST' });
+            toast21(muted ? '已取消静音' : '已静音');
+            closeModal('duoUserModal');
+          } catch (err) {
+            toast21(err.message);
+          }
+        });
+      }
+      openModal('duoUserModal');
+    } catch (err) {
+      toast21(err.message);
+    }
+  }
+
   // 暴露给 duo-app.js 使用
-  window.DuoFeatures = { openFolderPicker, openTopic, submitComment, toast21 };
+  window.DuoFeatures = { openFolderPicker, openTopic, submitComment, toast21, openPrivacy, openFavManager, openSecurity, openUser };
 })();

@@ -1022,6 +1022,7 @@ app.get('/api/discover/users', auth, requireAuth, LIMITS.search, (req, res) => {
       const shared = (u.interests || []).filter((i) => (req.user.interests || []).includes(i));
       return {
         ...publicUser(u),
+        username: u.username,
         bio: u.bio || '',
         interests: u.interests || [],
         followerCount: db.data.users.filter((x) => (x.following || []).includes(u.id)).length,
@@ -1055,7 +1056,7 @@ app.get('/api/discover/recommendations', auth, requireAuth, LIMITS.discover, (re
       if (shared.length > 0) reason = '兴趣相投 · ' + shared.slice(0, 2).join('、');
       else if (postCount >= 3) reason = '活跃创作者';
       else if (followerCount >= 2) reason = '热门用户';
-      return { ...publicUser(u), bio: u.bio || '', interests: u.interests || [], sharedInterests: shared, reason, score };
+      return { ...publicUser(u), username: u.username, bio: u.bio || '', interests: u.interests || [], sharedInterests: shared, reason, score, followerCount, postCount };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 20);

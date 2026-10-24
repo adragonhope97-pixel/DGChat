@@ -12,10 +12,7 @@
   <header class="duo-topbar">
     <img class="duo-logo" src="../../web/assets/logo.png" alt="" onerror="this.style.display='none'" />
     <span class="duo-title">DGChat Duo</span>
-    <div class="duo-tabs">
-      <button class="duo-tab active" data-tab="posts" id="duoTabPosts">动态</button>
-      <button class="duo-tab" data-tab="chat" id="duoTabChat">聊天<span class="duo-unread" id="duoUnread" hidden></span></button>
-    </div>
+
     <div class="duo-actions">
       <button class="duo-icon" id="duoBtnSearch" title="搜索"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
       <button class="duo-icon" id="duoBtnNotif" title="通知"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="duo-badge" id="duoNotifBadge" hidden></span></button>
@@ -70,6 +67,30 @@
       </div>
     </section>
   </main>
+
+  <!-- 底部导航（四标签） -->
+  <nav class="duo-tabbar" id="duoTabbar">
+    <button class="duo-tab active" data-tab="posts" id="duoTabPosts">动态</button>
+    <button class="duo-tab" data-tab="discover" id="duoTabDiscover">发现</button>
+    <button class="duo-tab" data-tab="chat" id="duoTabChat">聊天<span class="duo-unread" id="duoUnread" hidden></span></button>
+    <button class="duo-tab" data-tab="me" id="duoTabMe">我的</button>
+  </nav>
+
+  <!-- 发现视图（全宽，双栏模块之外） -->
+  <section class="duo-fullview" id="duoDiscoverView" hidden>
+    <div class="duo-seg" id="duoDiscoverSeg">
+      <button class="duo-tab active" data-disc="recommend">推荐用户</button>
+      <button class="duo-tab" data-disc="topics">热门话题</button>
+      <button class="duo-tab" data-disc="latest">最新动态</button>
+      <button class="duo-tab" data-disc="hot">热门动态</button>
+    </div>
+    <div class="duo-pane-scroll" id="duoDiscoverBody"></div>
+  </section>
+
+  <!-- 我的视图（全宽） -->
+  <section class="duo-fullview" id="duoMeView" hidden>
+    <div class="duo-pane-scroll" id="duoMeBody"></div>
+  </section>
 
   <!-- 发帖 -->
   <div class="duo-mask" id="duoComposeModal" hidden>
@@ -137,6 +158,43 @@
       <div class="duo-sheet-head"><b id="duoTopicName">#话题</b><button class="duo-close" data-close="duoTopicModal">✕</button></div>
       <div id="duoTopicPosts"></div>
     </div>
+  </div>
+
+  <!-- 隐私与互动 -->
+  <div class="duo-mask" id="duoPrivacyModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>隐私与互动</b><button class="duo-close" data-close="duoPrivacyModal">✕</button></div>
+      <label class="duo-check"><input type="checkbox" id="duoPrivacyPrivate" /><span>私密账号（动态仅关注者可见，关注需审批）</span></label>
+      <label class="duo-field-label">谁可以给我发私信</label>
+      <select id="duoPrivacyDm" class="duo-field"><option value="everyone">所有人</option><option value="following">我关注的人</option></select>
+      <label class="duo-field-label">谁可以评论我的动态</label>
+      <select id="duoPrivacyComment" class="duo-field"><option value="everyone">所有人</option><option value="following">我关注的人</option></select>
+      <label class="duo-check"><input type="checkbox" id="duoPrivacySearch" /><span>保留本机搜索历史</span></label>
+      <button class="duo-btn primary wide" id="duoPrivacySave">保 存</button>
+    </div>
+  </div>
+
+  <!-- 收藏夹管理 -->
+  <div class="duo-mask" id="duoFavMgrModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>我的收藏</b><button class="duo-close" data-close="duoFavMgrModal">✕</button></div>
+      <div class="duo-row" id="duoFavMgrFolders"></div>
+      <div id="duoFavMgrPosts"></div>
+      <button class="duo-btn wide" id="duoFavMgrMore" hidden>加载更多</button>
+    </div>
+  </div>
+
+  <!-- 账号安全 -->
+  <div class="duo-mask" id="duoSecurityModal" hidden>
+    <div class="duo-sheet">
+      <div class="duo-sheet-head"><b>账号安全</b><button class="duo-close" data-close="duoSecurityModal">✕</button></div>
+      <div id="duoSecurityBody"></div>
+    </div>
+  </div>
+
+  <!-- 用户资料 -->
+  <div class="duo-mask" id="duoUserModal" hidden>
+    <div class="duo-sheet" id="duoUserBox"></div>
   </div>
 
   <div class="toast-wrap" id="toastWrap"></div>

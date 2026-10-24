@@ -48,12 +48,15 @@
   }
 
   // 切换标签页时清空另一模块的选择状态提示
+  // 切换标签页：posts/chat 为双栏模块，discover/me 为全宽视图
   function setTab(tab) {
     state.tab = tab;
-    document.body.dataset.duoTab = tab;
     $$('.duo-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    const isDualModule = tab === 'posts' || tab === 'chat';
+    $('#duoApp').style.display = isDualModule ? '' : 'none';
+    $('#duoDiscoverView').hidden = tab !== 'discover';
+    $('#duoMeView').hidden = tab !== 'me';
     $('#duoPostsPane').hidden = tab !== 'posts';
-    $('#duoChatPane').hidden = tab !== 'chat';
     if (tab === 'posts') {
       $('#duoDetailPane').hidden = false;
       $('#duoThreadPane').hidden = true;
@@ -61,6 +64,8 @@
       $('#duoDetailPane').hidden = true;
       $('#duoThreadPane').hidden = false;
     }
+    if (tab === 'discover') renderDiscover();
+    if (tab === 'me') renderMe();
     applyLayout();
   }
 
@@ -192,6 +197,141 @@
     }
   }
 
+  // ---------- 我的（个人主页） ----------
+  async function renderMe() {
+    const body = $('#duoMeBody');
+    body.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      const [meData, stats] = await Promise.all([DuoAPI.me(), DuoAPI.call('/api/me/stats')]);
+      state.me = meData.user;
+      const mine = await DuoAPI.posts('mine=1&sort=latest');
+      body.innerHTML = `
+        <liquid-glass class="duo-item duo-me-card">
+          <div class="duo-item-inner">
+            ${DuoPanes.avatarHtml(state.me)}
+            <div class="duo-item-body">
+              <div class="duo-name">${DuoPanes.escapeHtml(state.me.nickname)}${state.me.role === 'admin' ? ' <span class="duo-admin-tag">管理员</span>' : ''}</div>
+              <div class="duo-preview">@${DuoPanes.escapeHtml(state.me.username)}${state.me.email ? ' · ' + DuoPanes.escapeHtml(state.me.email) : ''}</div>
+            </div>
+          </div>
+          <div class="duo-me-stats">
+            <span><b>${stats.posts}</b>帖子</span><span><b>${stats.likesReceived}</b>获赞</span>
+            <span><b>${stats.followers}</b>粉丝</span><span><b>${stats.following}</b>关注</span>
+          </div>
+        </liquid-glass>
+        <div class="duo-tools">
+          <button class="duo-tool" id="duoMeFolders">我的收藏</button>
+          <button class="duo-tool" id="duoMePrivacy">隐私与互动</button>
+          <button class="duo-tool" id="duoMeSecurity">账号安全</button>
+          <button class="duo-tool" id="duoMeLogout">退出登录</button>
+        </div>
+        <div class="duo-pane-head" style="border:none;padding-left:2px">我的帖子（${mine.posts.length}）</div>
+        ${mine.posts.map(DuoPanes.postCard).join('') || '<div class="duo-empty">还没有发过动态</div>'}`;
+      body.querySelectorAll('.duo-post-card').forEach((el) =>
+        el.addEventListener('click', () => {
+          setTab('posts');
+          openPostDetail(Number(el.dataset.id));
+          if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
+        })
+      );
+      $('#duoMeFolders').addEventListener('click', () => window.DuoFeatures.openFavManager());
+      $('#duoMePrivacy').addEventListener('click', () => window.DuoFeatures.openPrivacy());
+      $('#duoMeSecurity').addEventListener('click', () => window.DuoFeatures.openSecurity());
+      $('#duoMeLogout').addEventListener('click', async () => {
+        try { await DuoAPI.logout(); } catch {}
+        DuoAPI.setToken('');
+        location.reload();
+      });
+    } catch (err) {
+      body.innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ---------- 发现 ----------
+  let discoverSeg = 'recommend';
+  async function renderDiscover() {
+    $$('#duoDiscoverSeg .duo-tab').forEach((b) => b.classList.toggle('active', b.dataset.disc === discoverSeg));
+    const body = $('#duoDiscoverBody');
+    body.innerHTML = '<div class="duo-empty">加载中…</div>';
+    try {
+      if (discoverSeg === 'recommend' || discoverSeg === 'topics') {
+        if (discoverSeg === 'recommend') {
+          const data = await DuoAPI.call('/api/discover/recommendations');
+          body.innerHTML = data.users.length
+            ? data.users
+                .map(
+                  (u) => `
+              <liquid-glass class="duo-item duo-user" data-uid="${Number(u.id)}" interactive>
+                <div class="duo-item-inner">
+                  ${DuoPanes.avatarHtml(u)}
+                  <div class="duo-item-body">
+                    <div class="duo-item-top"><span class="duo-name">${DuoPanes.escapeHtml(u.nickname)}</span><span class="duo-time">${DuoPanes.escapeHtml(u.reason || '')}</span></div>
+                    <div class="duo-preview">@${DuoPanes.escapeHtml(u.username)} · ${Number(u.followerCount)} 粉丝</div>
+                  </div>
+                  <button class="duo-btn small duo-follow" data-uid="${Number(u.id)}" data-following="0">关注</button>
+                </div>
+              </liquid-glass>`
+                )
+                .join('')
+            : '<div class="duo-empty">暂无推荐，先去关注几位同学吧</div>'}
+        else {
+          const data = await DuoAPI.call('/api/topics?sort=hot');
+          body.innerHTML = data.items.length
+            ? data.items
+                .map(
+                  (t) => `
+              <liquid-glass class="duo-item duo-topic-row" data-topic="${DuoPanes.escapeHtml(t.name)}" interactive>
+                <div class="duo-item-inner">
+                  <div class="duo-avatar" style="background:var(--duo-accent)">#</div>
+                  <div class="duo-item-body">
+                    <div class="duo-name">#${DuoPanes.escapeHtml(t.name)}</div>
+                    <div class="duo-preview">${Number(t.posts)} 条动态 · ${Number(t.authors)} 位参与者</div>
+                  </div>
+                </div>
+              </liquid-glass>`
+                )
+                .join('')
+            : '<div class="duo-empty">还没有话题，发帖时用 #话题名# 创建</div>'}
+      } else {
+        const data = await DuoAPI.call('/api/discover/' + discoverSeg);
+        body.innerHTML = data.posts.length
+          ? data.posts.map(DuoPanes.postCard).join('')
+          : '<div class="duo-empty">还没有动态</div>'}
+      // 绑定
+      body.querySelectorAll('.duo-user').forEach((el) =>
+        el.addEventListener('click', () => window.DuoFeatures.openUser(Number(el.dataset.uid)))
+      );
+      body.querySelectorAll('.duo-follow').forEach((b) =>
+        b.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const r = await DuoAPI.call(`/api/users/${b.dataset.uid}/follow`, { method: 'POST' });
+          b.textContent = r.pending ? '已申请' : '已关注';
+          window.DuoFeatures.toast21(r.pending ? '已发送关注申请' : '已关注');
+        })
+      );
+      body.querySelectorAll('.duo-topic-row').forEach((el) =>
+        el.addEventListener('click', () => window.DuoFeatures.openTopic(el.dataset.topic))
+      );
+      if (window.bindTopicChips) window.bindTopicChips(body);
+      body.querySelectorAll('.duo-post-card').forEach((el) =>
+        el.addEventListener('click', () => {
+          setTab('posts');
+          openPostDetail(Number(el.dataset.id));
+          if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
+        })
+      );
+    } catch (err) {
+      body.innerHTML = `<div class="duo-empty">${DuoPanes.escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  $$('#duoDiscoverSeg .duo-tab').forEach((b) =>
+    b.addEventListener('click', () => {
+      discoverSeg = b.dataset.disc;
+      renderDiscover();
+    })
+  );
+
   // ---------- 登录 ----------
   async function ensureLogin() {
     if (!DuoAPI.hasToken()) {
@@ -224,6 +364,11 @@
       if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
     },
     goChat: () => setTab('chat'),
+    openThreadById: (uid, name) => {
+      setTab('chat');
+      openThread(uid, name);
+      if (state.mode === 'single') document.body.dataset.duoPane = 'detail';
+    },
   };
 
   document.addEventListener('DOMContentLoaded', async () => {
@@ -231,8 +376,9 @@
     window.addEventListener('resize', applyLayout);
     if (window.visualViewport) window.visualViewport.addEventListener('resize', applyLayout);
 
-    $('#duoTabPosts').addEventListener('click', () => setTab('posts'));
-    $('#duoTabChat').addEventListener('click', () => setTab('chat'));
+    $$('.duo-tab').forEach((b) => {
+      if (b.dataset.tab) b.addEventListener('click', () => setTab(b.dataset.tab));
+    });
 
     const loggedIn = await ensureLogin();
     if (!loggedIn) {
