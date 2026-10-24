@@ -17,6 +17,13 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+  const TOOL_ICONS = {
+    folders: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+    privacy: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+    security: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>',
+    logout: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  };
+
   // ---------- 布局 ----------
   function applyLayout() {
     const vv = window.visualViewport;
@@ -52,6 +59,7 @@
   function setTab(tab) {
     state.tab = tab;
     $$('.duo-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    moveTabSlider(tab);
     const isDualModule = tab === 'posts' || tab === 'chat';
     $('#duoApp').style.display = isDualModule ? '' : 'none';
     $('#duoDiscoverView').hidden = tab !== 'discover';
@@ -67,6 +75,18 @@
     if (tab === 'discover') renderDiscover();
     if (tab === 'me') renderMe();
     applyLayout();
+  }
+
+  // 底栏胶囊滑块：跟随激活标签（含窗口尺寸变化重算）
+  function moveTabSlider(tab) {
+    const ind = $('#duoTabInd');
+    const bar = $('#duoTabbar');
+    const active = bar && bar.querySelector(`.duo-tab[data-tab="${tab}"]`);
+    if (!ind || !bar || !active) return;
+    const pr = bar.getBoundingClientRect();
+    const r = active.getBoundingClientRect();
+    ind.style.left = Math.round(r.left - pr.left) + 'px';
+    ind.style.width = Math.round(r.width) + 'px';
   }
 
   // ---------- 数据渲染 ----------
@@ -220,10 +240,10 @@
           </div>
         </liquid-glass>
         <div class="duo-tools">
-          <button class="duo-tool" id="duoMeFolders">我的收藏</button>
-          <button class="duo-tool" id="duoMePrivacy">隐私与互动</button>
-          <button class="duo-tool" id="duoMeSecurity">账号安全</button>
-          <button class="duo-tool" id="duoMeLogout">退出登录</button>
+          <button class="duo-tool" id="duoMeFolders">${TOOL_ICONS.folders}我的收藏</button>
+          <button class="duo-tool" id="duoMePrivacy">${TOOL_ICONS.privacy}隐私与互动</button>
+          <button class="duo-tool" id="duoMeSecurity">${TOOL_ICONS.security}账号安全</button>
+          <button class="duo-tool" id="duoMeLogout">${TOOL_ICONS.logout}退出登录</button>
         </div>
         <div class="duo-pane-head" style="border:none;padding-left:2px">我的帖子（${mine.posts.length}）</div>
         ${mine.posts.map(DuoPanes.postCard).join('') || '<div class="duo-empty">还没有发过动态</div>'}`;
@@ -373,7 +393,10 @@
 
   document.addEventListener('DOMContentLoaded', async () => {
     applyLayout();
-    window.addEventListener('resize', applyLayout);
+    window.addEventListener('resize', () => {
+      applyLayout();
+      moveTabSlider(state.tab);
+    });
     if (window.visualViewport) window.visualViewport.addEventListener('resize', applyLayout);
 
     $$('.duo-tab').forEach((b) => {
@@ -421,6 +444,7 @@
         }
       });
       setTab('posts');
+      requestAnimationFrame(() => moveTabSlider('posts'));
       loadPosts();
       loadConvs();
       setInterval(loadConvs, 20000); // 会话未读轮询
