@@ -1,0 +1,67 @@
+name: Build iOS IPA (Duo)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-duo-ipa:
+    runs-on: macos-15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 以 Duo 版页面替换 Web 资源（注入局域网 API 地址）
+        run: |
+          rm -rf web
+          cp -r platforms/iphone-duo web
+          python3 - <<'EOF'
+          p = 'web/config/duo.config.js'
+          s = open(p, encoding='utf-8').read()
+          s = s.replace("API_BASE: ''", "API_BASE: 'http://192.168.3.216:3000'")
+          open(p, 'w', encoding='utf-8').write(s)
+          print('API_BASE injected')
+          EOF
+
+      - name: 变更 App 标识（DGChat Duo / 独立包名可与主站并存）
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName DGChat Duo" ios/App/App/Info.plist
+          sed -i '' 's/com\.dgchat\.app/com.dgchat.app.duo/g' ios/App/App.xcodeproj/project.pbxproj
+
+      - name: 同步并编译未签名 IPA（真机 arm64）
+        run: |
+          npx cap sync ios
+          cd ios/App
+          xcodebuild -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: 打包 IPA
+        run: |
+          cd ios/App/build/Build/Products/Release-iphoneos
+          mkdir -p Payload
+          cp -r App.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/dgchat-duo-unsigned.ipa" Payload
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dgchat-duo-unsigned-ipa
+          path: dgchat-duo-unsigned.ipa
+          retention-days: 30
