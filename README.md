@@ -65,6 +65,43 @@
 
 ---
 
+## 📦 版本说明与文件定位（1.0 / 2.0）
+
+仓库同时保留两个大版本的源码，通过 git 标签区分，互不覆盖：
+
+| | **v1.0.0** | **v2.0.0**（当前 main） |
+| --- | --- | --- |
+| 内容 | 网页论坛基础版 | 新增发现与交友 / 隐私与安全 / 创作者与运营工具 |
+| 源码获取 | `git checkout v1.0.0`，或 [v1.0.0 Release](https://github.com/adragonhope97-pixel/DGChat/releases/tag/v1.0.0) 的 Source code 包 | `git clone` 默认 main 分支 |
+| 安装包 | 无（仅源码存档） | [v2.0.0 Release](https://github.com/adragonhope97-pixel/DGChat/releases/tag/v2.0.0) 提供 APK / IPA |
+| 数据文件 | schema v1 | schema v2（旧数据首次启动自动迁移并备份） |
+
+**v1.0.0 关键文件**（在该标签下路径相同，直接切换即可阅读）：
+
+| 文件 | 定位 |
+| --- | --- |
+| `server/server.js` | 全部 REST 接口：帖子 / 评论 / 点赞收藏 / 私信 / 头像 |
+| `server/db.js` | JSON 数据层、版块定义、种子数据 |
+| `web/index.html` | 页面骨架：帖子 / 私信 / 我的 三视图 + 各弹窗 |
+| `web/js/app.js` | 全部前端交互（单文件） |
+| `web/style.css` | 玻璃设计令牌 + 屏幕自适应层 |
+| `web/assets/` · `web/vendor/liquid-glass/` | 图标背景图 / 液态玻璃组件库 |
+
+**v2.0.0 新增与改动**（在 1.0 基础上）：
+
+| 文件 | 定位 |
+| --- | --- |
+| `web/js/discover.js` 🆕 | 2.0 前端主体（约 700 行）：发现页 `loadDiscover()`、用户资料 `openUserModal()`、举报 `openReportModal()`、兴趣标签、关注粉丝屏蔽列表、创作者中心 `openCreatorModal()`、管理后台 `openAdminModal()` |
+| `web/index.html` | 新增 `<section id="discoverView">`（底部第四个标签「发现」）+ 6 个新弹窗（举报 / 用户资料 / 兴趣编辑 / 关系列表 / 创作者中心 / 管理后台）+ 发帖弹窗的「谁可以看 / 存草稿」 |
+| `web/js/app.js` | 改动点：`switchTab()` 接入发现页、`postCardHtml()` 草稿/仅自己/已隐藏标记、`openDetail()` 举报入口与作者资料跳转、`loadConversations()` 置顶备忘录会话 |
+| `server/server.js` | 新增 25 个接口（`/api/discover/*`、`/api/users/:id/(follow|block)`、`/api/reports`、`/api/me/creator`、`/api/admin/*`）；权限核心在文件前部：`canViewPost()`（动态可见性统一校验）、`blockedPair()`（屏蔽判断）、`requireAdmin()`、`rateLimit()` |
+| `server/db.js` | `migrate()`（schema v1→v2 自动迁移，迁移前备份到 `data/migrations/`）、原子写 `save()`、`SCHEMA_VERSION` |
+| `tests/api.test.mjs` 🆕 | 13 项权限与安全测试（屏蔽绕过 / 跨用户访问 / 管理员越权 / 频控等），`node --test tests/` 运行 |
+| `CHANGELOG.md` 🆕 | 完整版本记录 |
+| `data/migrations/`（运行时生成） | 升级前的原始数据备份，可回滚 |
+
+---
+
 ## 🧱 技术栈
 
 | 层 | 技术 |
