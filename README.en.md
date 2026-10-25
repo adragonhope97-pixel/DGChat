@@ -14,7 +14,7 @@
 
 简体中文 | **English** | [繁體中文（臺灣）](README.zh-TW.md)
 
-> **Current version v2.1** · See [CHANGELOG.md](CHANGELOG.md) for the full changelog
+> **Current version v2.5** · Feature registry: [docs/FEATURE-REGISTRY.md](docs/FEATURE-REGISTRY.md) · Full changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -101,6 +101,17 @@ Both major versions live in this repository as git tags — neither overwrites t
 | `data/migrations/` (generated) | Pre-upgrade data backups, restorable |
 
 ---
+
+## 🆕 What's New in 2.5
+
+- **Plaza (new bottom tab)**: second-hand market (state machine, anti-fake deal confirmation with chat proof, buyer ratings, seller credit), activities & team-ups (join/waitlist/promotion/30-min reminders), campus hot boards (interaction × time decay, gaming-resistant)
+- **Realtime**: WebSocket /ws (auth, rate-limited, polling fallback) — live DM, presence, typing, read receipts; **group chats** with owner controls
+- **Post polls** (single/multi, anonymous, deadline, duplicate-proof) and **campus mutual-aid** (open → doing → solved)
+- **Campus verification**: four registration policies (open / email domain / one-time invite codes / manual review) + verified badge; **anonymity protection** (de-anon admin-only with dual audit logs)
+- **Governance**: five roles (owner/admin/moderator/auditor/user), board-scoped moderators, mute/punishment/appeal with human review, anti-spam (duplicate content, auto-report link spam)
+- **Notification preferences**: per-type toggles + DND window; **data reliability**: write queue (concurrency-safe, tested) + corruption auto-recovery
+- **Deployment**: Dockerfile + compose + .env.example + [docs/DEPLOY.md](docs/DEPLOY.md) + first-run wizard (site settings) + plugin interface
+- Schema v4 (auto migration with pre-migration backup); **61 tests** green
 
 ## 🆕 What's New in 2.1
 

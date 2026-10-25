@@ -1,6 +1,6 @@
 {
   "name": "dgchat",
-  "version": "2.1.0",
+  "version": "2.5.0",
   "description": "DGChat —— 校园论坛（Web / Android / iOS 共用同一套 API）",
   "main": "server/server.js",
   "scripts": {
@@ -16,6 +16,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.7.1",
     "helmet": "^8.3.0",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "ws": "^8.22.0"
   }
 }

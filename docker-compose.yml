@@ -1,0 +1,37 @@
+services:
+  dgchat:
+    build: .
+    container_name: dgchat
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # —— 基础 ——
+      PORT: 3000
+      APP_NAME: DGChat
+      # —— 安全（生产建议全部设置） ——
+      # 反向代理后设 1（限流取真实 IP + HSTS 自动启用）
+      TRUST_PROXY: 0
+      # 额外允许的跨域来源（逗号分隔；Capacitor 原生端默认已放行）
+      CORS_ORIGINS: ""
+      # 强制 HSTS（无 HTTPS 代理时勿开）
+      FORCE_HSTS: 0
+      # —— 会话与锁定 ——
+      SESSION_TTL_MS: 2592000000   # 30 天
+      LOGIN_MAX_FAILS: 10
+      LOGIN_LOCK_MS: 900000        # 15 分钟
+      # —— 数据 ——
+      # DATA_DIR: /app/data         # 默认即 /app/data（相对仓库根 data/），如需外置可改
+    volumes:
+      - dgchat-data:/app/data
+      - dgchat-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dgchat-data:
+  dgchat-logs:

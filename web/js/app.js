@@ -898,14 +898,17 @@ function switchTab(tab) {
   }
   activeTab = tab;
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === tab + 'View'));
-  $$('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  $$('.tabbar:not(.tabbar--top) .tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab)); // 仅底栏（广场顶栏同 class 独立管理）
   $('#boardBar').hidden = tab !== 'posts';
+  if (tab === 'plaza') $('#boardBar').hidden = true;
   $('#fabNew').hidden = tab !== 'posts';
   window.scrollTo({ top: 0 });
   moveTabInd(true); // 胶囊拉伸-收缩变形
   placeFloating();
+  $('#plazaView') && $('#plazaView').classList.toggle('active', tab === 'plaza');
   if (tab === 'messages') loadConversations();
   if (tab === 'discover') loadDiscover();
+  if (tab === 'plaza' && window.renderPlaza) renderPlaza();
   if (tab === 'me') {
     renderMeProfile();
     renderBgPicker();
@@ -913,7 +916,7 @@ function switchTab(tab) {
   }
 }
 
-$$('.tab-btn').forEach((btn) => {
+$$('.tabbar:not(.tabbar--top) .tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
@@ -1361,7 +1364,7 @@ function makeElastic(el) {
 // 底栏胶囊滑块：抓住拖动，范围锁在底栏内（两端 8px 弹性），松手吸附最近标签
 const tabDrag = { on: false, moved: false, startX: 0, startL: 0, pid: 0 };
 function initTabDrag() {
-  const bar = document.querySelector('.tabbar');
+  const bar = document.querySelector('.tabbar:not(.tabbar--top)');
   if (!bar || bar.dataset.dragAttached) return;
   bar.dataset.dragAttached = '1';
 
@@ -1457,7 +1460,7 @@ function setTabInd(left, width, duration) {
   tabInd.style.width = width + 'px';
 }
 function moveTabInd(animate = true) {
-  const active = document.querySelector('.tab-btn.active');
+  const active = document.querySelector('.tabbar:not(.tabbar--top) .tab-btn.active'); // moveTabInd 仅底栏
   if (!active) return;
   const pr = tabInd.parentElement.getBoundingClientRect();
   const r = active.getBoundingClientRect();
@@ -1465,7 +1468,7 @@ function moveTabInd(animate = true) {
 }
 function nearestTab(centerX) {
   let best = null, bestDist = Infinity;
-  $$('.tab-btn').forEach((b) => {
+  $$('.tabbar:not(.tabbar--top) .tab-btn').forEach((b) => {
     const r = b.getBoundingClientRect();
     const d = Math.abs(r.left + r.width / 2 - centerX);
     if (d < bestDist) { bestDist = d; best = b; }
@@ -1473,7 +1476,7 @@ function nearestTab(centerX) {
   return best;
 }
 function initTabInd() {
-  const bar = document.querySelector('.tabbar');
+  const bar = document.querySelector('.tabbar:not(.tabbar--top)');
   if (!bar.contains(tabInd)) bar.prepend(tabInd);
   moveTabInd(false);
 }
@@ -1500,7 +1503,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', read
 // 实时读取当前窗口高度（分辨率变化 / 软键盘弹出 / 旋转屏幕都会触发 resize）
 // 来放置底栏和加号按钮，保证任何标签页、任何设备下位置一致。
 function placeFloating() {
-  const bar = document.querySelector('.tabbar');
+  const bar = document.querySelector('.tabbar:not(.tabbar--top)'); // 排除广场顶栏（同 class 不同定位）
   const fab = document.querySelector('.fab');
   if (!bar) return;
   // 以可视视口高度（VP.h，键盘弹出/工具栏收起时自动变化）为基准放置

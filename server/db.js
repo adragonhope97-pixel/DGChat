@@ -161,6 +161,42 @@ function migrate() {
   if (!db.reports) db.reports = [];
   if (!db.adminLogs) db.adminLogs = [];
 
+  // ----- v4：2.5 校园平台结构 -----（v3 之前结构见下）
+  if (Number(db.schemaVersion || 1) < 4) {
+    // 站点配置（单校默认；多校仅预留 schoolId 字段，隔离未启用）
+    if (!db.site) db.site = {
+      name: 'DGChat', school: '', logo: '', themeColor: '',
+      regPolicy: 'open', // open | emailDomain | invite | manual
+      emailDomain: '', inviteCodes: [], manualApproved: [],
+    };
+    for (const u of db.users) {
+      if (!u.verified) u.verified = null; // {school, method:'email'|'invite'|'manual', at}
+      if (u.role === 'user' || u.role === 'admin') { /* 保持；新角色: moderator/auditor 由管理员授予 */ }
+      if (!u.mute) u.mute = null; // {until, reason}
+      if (!u.notifPrefs) u.notifPrefs = { off: [], dndStart: null, dndEnd: null }; // off: 通知类型数组
+    }
+    if (!db.marketItems) db.marketItems = [];
+    if (!db.activities) db.activities = [];
+    if (!db.activityJoins) db.activityJoins = []; // {id, activityId, userId, status: joined|waitlist, at}
+    if (!db.groups) db.groups = [];
+    if (!db.groupMembers) db.groupMembers = []; // {groupId, userId, role: owner|member, joinedAt}
+    if (!db.ratings) db.ratings = []; // {id, itemId, raterId, sellerId, stars, comment, at}
+    if (!db.anonMap) db.anonMap = []; // 匿名身份映射：仅管理员审计接口可查
+    if (!db.punishments) db.punishments = []; // {id, userId, type: mute|restrict|ban, reason, until, by, at, appeal:{note,status}}
+    if (!db.hotCache) db.hotCache = { at: 0, data: null };
+    for (const x of db.posts) {
+      if (x.poll === undefined) x.poll = null;
+      if (x.kind === undefined) x.kind = 'post'; // post | help
+      if (x.helpStatus === undefined) x.helpStatus = null; // open | doing | solved（kind=help）
+    }
+    for (const m of db.messages) if (m.groupId === undefined) m.groupId = null;
+    if (db.seq.marketItem === undefined) db.seq.marketItem = 0;
+    if (db.seq.activity === undefined) db.seq.activity = 0;
+    if (db.seq.group === undefined) db.seq.group = 0;
+    if (db.seq.rating === undefined) db.seq.rating = 0;
+    if (db.seq.punishment === undefined) db.seq.punishment = 0;
+  }
+
   // ----- v3：2.1 新结构 -----
   if (Number(db.schemaVersion || 1) < 3) {
     for (const u of db.users) {
@@ -206,14 +242,49 @@ function migrate() {
   db.schemaVersion = SCHEMA_VERSION;
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
+// ---------- 写队列：所有落盘串行执行，防止并发快照互相覆盖 ----------
+// save() 只入队立即返回；_drain 逐任务执行（任务捕获当时数据快照引用，
+// 由于 Node 单线程且任务间无 await，快照在执行时即为最新完整状态）。
+let _saveQueue = [];
+let _saving = false;
 function save() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  // 原子写：先写临时文件再 rename，异常断电不会截断 data.json
-  const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DATA_FILE);
+  return new Promise((resolve) => {
+    _saveQueue.push(resolve);
+    _drain();
+  });
+}
+function _drain() {
+  if (_saving) return;
+  const next = _saveQueue.shift();
+  if (!next) return;
+  _saving = true;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // 原子写 + 写后完整性校验（回读 JSON.parse）
+    const tmp = DATA_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+    fs.renameSync(tmp, DATA_FILE);
+    JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); // 校验
+  } catch (err) {
+    console.error('[db] 写盘失败（保留内存态，下次重试）:', err.message);
+    // 失败时立即再排一次重试，避免队列静默丢失
+    _saveQueue.unshift(next);
+    _saving = false;
+    setTimeout(() => _drain(), 200);
+    return;
+  }
+  _saving = false;
+  next();
+  _drain();
+}
+// 测试/停机辅助：等待队列排空
+function flush() {
+  return new Promise((resolve) => {
+    const tick = () => (_saveQueue.length || _saving ? setTimeout(tick, 10) : resolve());
+    tick();
+  });
 }
 
 function nextId(kind) {
@@ -230,5 +301,6 @@ module.exports = {
   SCHEMA_VERSION,
   hashPassword,
   save,
+  flush,
   nextId,
 };

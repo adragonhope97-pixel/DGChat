@@ -131,6 +131,7 @@ function publicUser(u) {
     avatarColor: u.avatarColor,
     role: u.role || 'user',
     avatar: u.avatar || null,
+    verified: !!u.verified, // 仅布尔，不泄露认证细节
   };
 }
 
@@ -166,7 +167,10 @@ function removeAvatarFile(url) {
   fs.rm(path.join(UPLOAD_DIR, url.replace('/uploads/', '')), { force: true }, () => {});
 }
 
-const isAdmin = (u) => !!u && u.role === 'admin';
+const isAdmin = (u) => !!u && (u.role === 'admin' || u.role === 'owner');
+const ROLE_RANK = { user: 0, auditor: 1, moderator: 2, admin: 3, owner: 4 };
+const hasRole = (u, min) => !!u && (ROLE_RANK[u.role] !== undefined) && ROLE_RANK[u.role] >= ROLE_RANK[min];
+const isMuted = (u) => !!(u && u.mute && u.mute.until > Date.now());
 
 // ---------- 会话与安全事件 ----------
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS) || 30 * 24 * 3600e3; // 会话有效期，默认 30 天
@@ -240,6 +244,21 @@ function requireAdmin(req, res, next) {
   if (!isAdmin(req.user)) return res.status(403).json({ error: '需要管理员权限' });
   next();
 }
+function requireRole(min) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: '请先登录' });
+    if (!hasRole(req.user, min)) return res.status(403).json({ error: '权限不足' });
+    next();
+  };
+}
+// 发内容（帖/评/私信/商品/活动）统一检查：封禁/限制由 requireAuth 拦，这里拦禁言
+function requireNotMuted(req, res, next) {
+  if (isMuted(req.user)) {
+    const until = new Date(req.user.mute.until).toLocaleString('zh-CN');
+    return res.status(403).json({ error: `你已被禁言至 ${until}（原因：${req.user.mute.reason || '违反社区规范'}），可申诉` });
+  }
+  next();
+}
 
 function boardById(id) {
   return db.BOARDS.find((b) => b.id === id) || null;
@@ -267,6 +286,14 @@ function postView(post, me) {
     favoritedByMe: !!me && (post.favorites || []).includes(me.id),
     commentCount,
     topics: post.topics || [],
+    kind: post.kind || 'post',
+    helpStatus: post.helpStatus || null,
+    poll: post.poll ? {
+      options: post.poll.options, multi: post.poll.multi, anonymousVote: post.poll.anonymousVote,
+      deadline: post.poll.deadline, closed: post.poll.closed || post.poll.deadline < Date.now(),
+      totalVotes: Object.keys(post.poll.votes).length,
+      myVoted: !!me && !!post.poll.votes[me.id],
+    } : null,
     visibility: post.visibility || 'public',
     status: post.status || 'published',
     views: post.views || 0,
@@ -329,6 +356,19 @@ function notify(userId, type, actorId, extra = {}) {
   if (!recipient || !actor) return;
   if (blockedPair(recipient, actor)) return; // 屏蔽双方互不发通知
   if ((recipient.muted || []).includes(actor.id)) return; // 静音者不通知
+  // 2.5：通知偏好——类型关闭或免打扰时段内不产生通知（关键系统类除外）
+  const prefs = recipient.notifPrefs || {};
+  const critical = type === 'system';
+  if (!critical && Array.isArray(prefs.off) && prefs.off.includes(type)) return;
+  if (!critical && prefs.dndStart != null && prefs.dndEnd != null) {
+    const now = new Date();
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = String(prefs.dndStart).split(':').map(Number);
+    const [eh, em] = String(prefs.dndEnd).split(':').map(Number);
+    const st = sh * 60 + (sm || 0), en = eh * 60 + (em || 0);
+    const inDnd = st <= en ? mins >= st && mins < en : mins >= st || mins < en;
+    if (inDnd) return;
+  }
   const window = Date.now() - 10 * 60e3;
   const dup = db.data.notifications.find(
     (n) => n.userId === userId && n.type === type && n.actorId === actorId &&
@@ -397,6 +437,29 @@ app.post('/api/auth/register', LIMITS.register, (req, res) => {
       return res.status(409).json({ error: '该邮箱已被注册' });
     }
   }
+  // 2.5：注册策略校验（邮箱域名 / 邀请码 / 人工审核）
+  const siteCfg = db.data.site;
+  let verified = null;
+  if (siteCfg.regPolicy === 'emailDomain') {
+    if (!emailNorm || !siteCfg.emailDomain) {
+      return res.status(400).json({ error: `当前需使用校园邮箱（@${siteCfg.emailDomain || '…'}）注册` });
+    }
+    if (!emailNorm.endsWith('@' + siteCfg.emailDomain)) {
+      return res.status(400).json({ error: `请使用校园邮箱 @${siteCfg.emailDomain} 注册` });
+    }
+    verified = { school: siteCfg.school || '', method: 'email', at: Date.now() };
+  } else if (siteCfg.regPolicy === 'invite') {
+    const code = String((req.body || {}).inviteCode || '').trim();
+    const i = siteCfg.inviteCodes.indexOf(code);
+    if (i === -1) return res.status(403).json({ error: '邀请码无效' });
+    siteCfg.inviteCodes.splice(i, 1); // 一次性使用
+    verified = { school: siteCfg.school || '', method: 'invite', at: Date.now() };
+  } else if (siteCfg.regPolicy === 'manual') {
+    if (!siteCfg.manualApproved.includes(username)) {
+      return res.status(403).json({ error: '当前为人工审核注册，请先联系管理员加入批准名单' });
+    }
+    verified = { school: siteCfg.school || '', method: 'manual', at: Date.now() };
+  }
   const salt = crypto.randomBytes(16).toString('hex');
   const id = db.nextId('user');
   const user = {
@@ -415,6 +478,9 @@ app.post('/api/auth/register', LIMITS.register, (req, res) => {
     status: 'active',
     bio: '',
     settings: { privateAccount: false, dmPolicy: 'everyone', commentPolicy: 'everyone', searchHistory: true },
+    verified,
+    mute: null,
+    notifPrefs: { off: [], dndStart: null, dndEnd: null },
     muted: [],
     hiddenPosts: [],
     followRequests: [],
@@ -514,6 +580,34 @@ app.put('/api/me/password', auth, requireAuth, mkLimiter(60 * 60e3, 5), (req, re
   secLog('password_changed', 'uid=' + req.user.id);
   res.json({ ok: true });
 });
+// ---------- 站点配置（2.5：学校/注册策略/认证） ----------
+app.get('/api/site', (req, res) => {
+  const st = db.data.site;
+  res.json({
+    site: {
+      name: st.name, school: st.school, logo: st.logo, themeColor: st.themeColor,
+      regPolicy: st.regPolicy,
+      emailDomain: st.emailDomain || null,
+      inviteRequired: st.regPolicy === 'invite',
+      manualRequired: st.regPolicy === 'manual',
+      verifiedCount: db.data.users.filter((u) => u.verified).length,
+    },
+  });
+});
+app.put('/api/site', auth, requireRole('admin'), (req, res) => {
+  const b = req.body || {};
+  const st = db.data.site;
+  const strFields = ['name', 'school', 'logo', 'themeColor', 'emailDomain'];
+  for (const f of strFields) if (b[f] !== undefined) st[f] = String(b[f]).slice(0, 100);
+  if (b.regPolicy !== undefined) {
+    if (!['open', 'emailDomain', 'invite', 'manual'].includes(b.regPolicy)) return res.status(400).json({ error: '注册策略参数不正确' });
+    st.regPolicy = b.regPolicy;
+  }
+  if (Array.isArray(b.inviteCodes)) st.inviteCodes = b.inviteCodes.map((x) => String(x).trim().slice(0, 32)).filter(Boolean).slice(0, 50);
+  db.save();
+  adminLog(req.user, 'update_site_config', 'site', 0, 'regPolicy=' + st.regPolicy);
+  res.json({ ok: true });
+});
 // ---------- 版块 ----------
 
 app.get('/api/boards', (req, res) => {
@@ -585,12 +679,46 @@ app.get('/api/posts/:id', auth, (req, res) => {
   res.json({ post: postView(post, req.user), comments });
 });
 
-app.post('/api/posts', auth, requireAuth, LIMITS.postCreate, upload.array('images', 9), (req, res) => {
+app.post('/api/posts', auth, requireAuth, requireNotMuted, LIMITS.postCreate, upload.array('images', 9), (req, res) => {
   const { board, title, content } = req.body;
   const anonymous = req.body.anonymous === 'true' || req.body.anonymous === true;
   const visibility = req.body.visibility === 'private' ? 'private' : 'public';
   const draft = req.body.draft === 'true' || req.body.draft === true;
+  const kind = req.body.kind === 'help' ? 'help' : 'post';
   if (!boardById(board)) return res.status(400).json({ error: '请选择正确的版块' });
+  if (!draft) {
+    const fingerprint = title.trim() + '|' + content.trim();
+    const dup = db.data.posts.some(
+      (x) => x.userId === req.user.id && !x.hidden && x.status === 'published' &&
+        Date.now() - x.createdAt < 3600e3 && (x.title + '|' + x.content) === fingerprint
+    );
+    if (dup) return res.status(429).json({ error: '检测到重复内容：一小时内已发布过相同帖子' });
+    const links = (String(content).match(/https?:\/\//g) || []).length;
+    if (links > 3) {
+      db.data.reports.push({
+        id: db.nextId('report'), targetType: 'post', targetId: 0, reporterId: req.user.id,
+        reason: '自动：可疑垃圾链接（>3 条外链）', detail: fingerprint.slice(0, 100),
+        status: 'pending', createdAt: Date.now(), handledBy: null, handledAt: null, handleNote: '', action: '',
+      });
+    }
+  }
+  let poll = null;
+  if (!draft && req.body.pollOptions) {
+    let options = [];
+    try { options = JSON.parse(req.body.pollOptions); } catch {}
+    options = (Array.isArray(options) ? options : []).map((x) => String(x).trim().slice(0, 40)).filter(Boolean);
+    if (options.length >= 2 && options.length <= 10) {
+      const deadlineH = Math.min(Math.max(Number(req.body.pollDeadlineHours) || 24, 1), 24 * 7);
+      poll = {
+        options,
+        multi: req.body.pollMulti === 'true' || req.body.pollMulti === true,
+        anonymousVote: req.body.pollAnonymous === 'true' || req.body.pollAnonymous === true,
+        deadline: Date.now() + deadlineH * 3600e3,
+        votes: {},
+        closed: false,
+      };
+    }
+  }
   if (!title || !title.trim()) return res.status(400).json({ error: '请填写标题' });
   if (title.length > 60) return res.status(400).json({ error: '标题最多 60 字' });
   if (!content || !content.trim()) return res.status(400).json({ error: '请填写正文内容' });
@@ -606,6 +734,9 @@ app.post('/api/posts', auth, requireAuth, LIMITS.postCreate, upload.array('image
     title: title.trim(),
     content: content.trim(),
     anonymous,
+    kind,
+    helpStatus: kind === 'help' ? 'open' : null,
+    poll,
     visibility,
     status: draft ? 'draft' : 'published',
     images: fileUrls(req.files),
@@ -618,6 +749,7 @@ app.post('/api/posts', auth, requireAuth, LIMITS.postCreate, upload.array('image
     createdAt: Date.now(),
   };
   db.data.posts.push(post);
+  if (anonymous) db.data.anonMap.push({ postId: post.id, userId: req.user.id, tag: '匿名同学#' + post.id });
   db.save();
   res.json({ post: postView(post, req.user) });
 });
@@ -726,7 +858,7 @@ app.delete('/api/posts/:id/favorite', auth, requireAuth, (req, res) => {
 
 // ---------- 评论 ----------
 
-app.post('/api/posts/:id/comments', auth, requireAuth, LIMITS.comment, (req, res) => {
+app.post('/api/posts/:id/comments', auth, requireAuth, requireNotMuted, LIMITS.comment, (req, res) => {
   const post = db.data.posts.find((p) => p.id === Number(req.params.id));
   if (!post || !canViewPost(post, req.user)) return res.status(404).json({ error: '帖子不存在或已被删除' });
   const author = db.data.users.find((u) => u.id === post.userId);
@@ -866,7 +998,7 @@ app.get('/api/conversations/:userId', auth, requireAuth, (req, res) => {
 });
 
 // 发送私信
-app.post('/api/messages', auth, requireAuth, LIMITS.message, (req, res) => {
+app.post('/api/messages', auth, requireAuth, requireNotMuted, LIMITS.message, (req, res) => {
   const { toUserId, content } = req.body || {};
   const partner = db.data.users.find((u) => u.id === Number(toUserId));
   if (!partner) return res.status(404).json({ error: '用户不存在' });
@@ -1947,7 +2079,632 @@ function recomputeStats(snap, days, now) {
   };
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version: '2.1.0', schema: db.SCHEMA_VERSION }));
+// ========== 2.5 特性主体（插入 server.js，位于 /api/health 之前） ==========
+
+// ---------- 校园认证：自助申请 + 管理审核 ----------
+// 已验证用户提交校园邮箱（域名匹配自动通过）；否则进入人工审核
+app.post('/api/me/verify', auth, requireAuth, (req, res) => {
+  if (req.user.verified) return res.status(409).json({ error: '你已完成校园认证' });
+  const st = db.data.site;
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: '邮箱格式不正确' });
+  if (st.emailDomain && email.endsWith('@' + st.emailDomain)) {
+    req.user.verified = { school: st.school || '', method: 'email', at: Date.now() };
+    db.save();
+    return res.json({ ok: true, verified: true, method: 'email' });
+  }
+  // 人工审核：登记申请，通知管理员
+  if (!db.data.verifyRequests) db.data.verifyRequests = [];
+  if (db.data.verifyRequests.some((r) => r.userId === req.user.id && r.status === 'pending')) {
+    return res.status(409).json({ error: '已有待审核的认证申请' });
+  }
+  db.data.verifyRequests.push({ id: db.nextId('report'), userId: req.user.id, email, status: 'pending', createdAt: Date.now() });
+  for (const admin of db.data.users.filter((u) => isAdmin(u))) {
+    notify(admin.id, 'system', req.user.id, { text: '有新的校园认证申请待审核' });
+  }
+  db.save();
+  res.json({ ok: true, verified: false, pending: true });
+});
+app.get('/api/admin/verify-requests', auth, requireRole('admin'), (req, res) => {
+  const list = (db.data.verifyRequests || [])
+    .filter((r) => r.status === 'pending')
+    .map((r) => ({ ...r, user: publicUser(db.data.users.find((u) => u.id === r.userId)) }));
+  res.json({ requests: list });
+});
+app.post('/api/admin/verify-requests/:id/approve', auth, requireRole('admin'), (req, res) => {
+  const r = (db.data.verifyRequests || []).find((x) => x.id === Number(req.params.id) && x.status === 'pending');
+  if (!r) return res.status(404).json({ error: '申请不存在' });
+  const u = db.data.users.find((x) => x.id === r.userId);
+  if (u) {
+    u.verified = { school: db.data.site.school || '', method: 'manual', at: Date.now() };
+    notify(u.id, 'system', req.user.id, { text: '你的校园认证已通过' });
+  }
+  r.status = 'approved';
+  adminLog(req.user, 'verify_approve', 'user', r.userId, r.email);
+  db.save();
+  res.json({ ok: true });
+});
+
+// ---------- 匿名保护：去匿名仅管理员 + 审计 ----------
+app.get('/api/admin/anon/:postId', auth, requireRole('admin'), (req, res) => {
+  const rec = db.data.anonMap.find((x) => x.postId === Number(req.params.postId));
+  if (!rec) return res.status(404).json({ error: '无匿名记录' });
+  const u = db.data.users.find((x) => x.id === rec.userId);
+  secLog('anon_deanon', 'postId=' + rec.postId + ' target=uid#' + rec.userId + ' by=admin#' + req.user.id);
+  adminLog(req.user, 'anon_deanon', 'post', rec.postId, '敏感操作：查看匿名真实身份');
+  db.save();
+  res.json({ user: { ...publicUser(u), username: u.username } });
+});
+
+// ---------- 投票 ----------
+app.post('/api/posts/:id/poll/vote', auth, requireAuth, requireNotMuted, (req, res) => {
+  const post = db.data.posts.find((p) => p.id === Number(req.params.id));
+  if (!post || !post.poll) return res.status(404).json({ error: '投票不存在' });
+  const pl = post.poll;
+  if (pl.closed || pl.deadline < Date.now()) return res.status(400).json({ error: '投票已截止' });
+  if (pl.votes[req.user.id]) return res.status(409).json({ error: '你已投过票' });
+  let idxs = req.body && req.body.options;
+  if (!Array.isArray(idxs)) idxs = [idxs];
+  idxs = [...new Set(idxs.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < pl.options.length))];
+  if (!idxs.length) return res.status(400).json({ error: '请选择有效选项' });
+  if (!pl.multi && idxs.length > 1) return res.status(400).json({ error: '该投票为单选' });
+  pl.votes[req.user.id] = idxs; // 服务端强制一人一票（含多选整组）
+  db.save();
+  notify(post.userId, 'like', req.user.id, { postId: post.id }); // 复用互动通知渠道
+  res.json({ ok: true, totalVotes: Object.keys(pl.votes).length });
+});
+app.get('/api/posts/:id/poll/results', auth, (req, res) => {
+  const post = db.data.posts.find((p) => p.id === Number(req.params.id));
+  if (!post || !post.poll) return res.status(404).json({ error: '投票不存在' });
+  const pl = post.poll;
+  const counts = pl.options.map(() => 0);
+  for (const idxs of Object.values(pl.votes)) for (const i of idxs) counts[i] += 1;
+  const total = Object.keys(pl.votes).length;
+  // 匿名投票：只返回计数；实名：附投票者公开信息（仅作者可见完整名单由前端控制，这里统一返回匿名聚合计数 + 是否我已投）
+  res.json({
+    options: pl.options, counts, total, closed: pl.closed || pl.deadline < Date.now(),
+    deadline: pl.deadline, myVoted: !!req.user && !!pl.votes[req.user.id],
+  });
+});
+
+// ---------- 互助帖状态流转（作者本人） ----------
+app.post('/api/posts/:id/help-status', auth, requireAuth, (req, res) => {
+  const post = db.data.posts.find((p) => p.id === Number(req.params.id));
+  if (!post || post.kind !== 'help') return res.status(404).json({ error: '互助帖不存在' });
+  if (post.userId !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: '只有作者可以更新状态' });
+  const next = (req.body || {}).status;
+  const FLOW = { open: ['doing', 'solved'], doing: ['solved', 'open'], solved: [] };
+  if (!FLOW[post.helpStatus] || !FLOW[post.helpStatus].includes(next)) {
+    return res.status(400).json({ error: `不允许的状态转换：${post.helpStatus} → ${next}` });
+  }
+  post.helpStatus = next;
+  db.save();
+  res.json({ ok: true, helpStatus: next });
+});
+
+// ---------- 校园二手交易 ----------
+const MARKET_STATUSES = ['onsale', 'reserved', 'sold', 'off'];
+const MARKET_TRANSITIONS = { onsale: ['reserved', 'off'], reserved: ['onsale', 'off'], sold: ['off'], off: ['onsale'] }; // sold 仅能经 /deal（带聊天凭证）达成
+const MARKET_CATS = ['数码', '图书', '生活', '服饰', '运动', '美妆', '票券', '其他'];
+
+function itemView(x, me) {
+  const seller = publicUser(db.data.users.find((u) => u.id === x.userId));
+  return {
+    id: x.id, title: x.title, desc: x.desc, price: x.price, condition: x.condition, category: x.category,
+    images: x.images || [], place: x.place || '', status: x.status, views: x.views || 0,
+    seller, createdAt: x.createdAt,
+    favCount: (x.favs || []).length, favByMe: !!me && (x.favs || []).includes(me.id),
+    isMine: !!me && x.userId === me.id, canEdit: !!me && x.userId === me.id,
+    dealBuyerId: x.dealBuyerId || null,
+    myRating: !!me && db.data.ratings.some((r) => r.itemId === x.id && r.raterId === me.id),
+  };
+}
+
+app.get('/api/market', auth, LIMITS.search, (req, res) => {
+  const { q, category, status, mine, page, limit } = req.query;
+  let list = db.data.marketItems.slice();
+  if (mine === '1' && req.user) list = list.filter((x) => x.userId === req.user.id);
+  if (status && MARKET_STATUSES.includes(status)) list = list.filter((x) => x.status === status);
+  else list = list.filter((x) => x.status !== 'off'); // 默认不下架品
+  if (category && MARKET_CATS.includes(category)) list = list.filter((x) => x.category === category);
+  if (q) { const kw = String(q).toLowerCase(); list = list.filter((x) => (x.title + ' ' + x.desc).toLowerCase().includes(kw)); }
+  list.sort((a, b) => b.createdAt - a.createdAt);
+  const pg = Math.max(1, Number(page) || 1), lm = Math.min(20, Number(limit) || 10);
+  res.json({ total: list.length, page: pg, items: list.slice((pg - 1) * lm, pg * lm).map((x) => itemView(x, req.user)) });
+});
+app.get('/api/market/:id', auth, (req, res) => {
+  const x = db.data.marketItems.find((y) => y.id === Number(req.params.id));
+  if (!x) return res.status(404).json({ error: '商品不存在' });
+  x.views = (x.views || 0) + 1; db.save();
+  res.json({ item: itemView(x, req.user) });
+});
+app.post('/api/market', auth, requireAuth, requireNotMuted, mkLimiter(10 * 60e3, 10), upload.array('images', 6), (req, res) => {
+  const b = req.body || {};
+  const title = String(b.title || '').trim();
+  const desc = String(b.desc || '').trim();
+  const price = Number(b.price);
+  if (!title || title.length > 40) return res.status(400).json({ error: '商品名称需为 1-40 字' });
+  if (!desc || desc.length > 1000) return res.status(400).json({ error: '描述需为 1-1000 字' });
+  if (!(price >= 0 && price <= 999999)) return res.status(400).json({ error: '价格需为 0-999999' });
+  const condition = ['全新', '几乎全新', '轻微使用痕迹', '明显使用痕迹'].includes(b.condition) ? b.condition : '几乎全新';
+  const category = MARKET_CATS.includes(b.category) ? b.category : '其他';
+  const item = {
+    id: db.nextId('marketItem'), userId: req.user.id, title, desc, price, condition, category,
+    images: fileUrls(req.files).slice(0, 6), place: String(b.place || '').slice(0, 60),
+    status: 'onsale', favs: [], views: 0, dealBuyerId: null, createdAt: Date.now(),
+  };
+  db.data.marketItems.push(item);
+  db.save();
+  res.json({ item: itemView(item, req.user) });
+});
+app.put('/api/market/:id', auth, requireAuth, upload.array('images', 6), (req, res) => {
+  const x = db.data.marketItems.find((y) => y.id === Number(req.params.id));
+  if (!x) return res.status(404).json({ error: '商品不存在' });
+  if (x.userId !== req.user.id) return res.status(403).json({ error: '只能编辑自己的商品' });
+  const b = req.body || {};
+  if (b.title !== undefined) x.title = String(b.title).trim().slice(0, 40);
+  if (b.desc !== undefined) x.desc = String(b.desc).trim().slice(0, 1000);
+  if (b.price !== undefined) { const p = Number(b.price); if (!(p >= 0 && p <= 999999)) return res.status(400).json({ error: '价格不正确' }); x.price = p; }
+  if (b.condition !== undefined && ['全新', '几乎全新', '轻微使用痕迹', '明显使用痕迹'].includes(b.condition)) x.condition = b.condition;
+  if (b.category !== undefined && MARKET_CATS.includes(b.category)) x.category = b.category;
+  if (b.place !== undefined) x.place = String(b.place).slice(0, 60);
+  let kept = []; try { kept = JSON.parse(b.existingImages || '[]'); } catch {}
+  if (Array.isArray(kept)) x.images = [...kept.filter((u) => typeof u === 'string' && u.startsWith('/uploads/')), ...fileUrls(req.files)].slice(0, 6);
+  // 状态转换（含在编辑里提交）走统一校验
+  if (b.status !== undefined && b.status !== x.status) {
+    if (!MARKET_TRANSITIONS[x.status] || !MARKET_TRANSITIONS[x.status].includes(b.status)) {
+      return res.status(400).json({ error: `非法状态转换：${x.status} → ${b.status}` });
+    }
+    x.status = b.status;
+    if (b.status === 'sold') x.dealBuyerId = Number(b.dealBuyerId) || x.dealBuyerId || null;
+  }
+  db.save();
+  res.json({ item: itemView(x, req.user) });
+});
+app.delete('/api/market/:id', auth, requireAuth, (req, res) => {
+  const i = db.data.marketItems.findIndex((y) => y.id === Number(req.params.id));
+  if (i === -1) return res.status(404).json({ error: '商品不存在' });
+  if (db.data.marketItems[i].userId !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: '只能删除自己的商品' });
+  db.data.marketItems.splice(i, 1);
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/market/:id/fav', auth, requireAuth, (req, res) => {
+  const x = db.data.marketItems.find((y) => y.id === Number(req.params.id));
+  if (!x) return res.status(404).json({ error: '商品不存在' });
+  const i = (x.favs || []).indexOf(req.user.id);
+  if (i === -1) x.favs.push(req.user.id); else x.favs.splice(i, 1);
+  db.save();
+  res.json({ favCount: x.favs.length, favByMe: i === -1 });
+});
+// 交易完成：卖家标记售予某买家（买家通过「联系卖家」私信产生）；随后买家可评价一次
+app.post('/api/market/:id/deal', auth, requireAuth, (req, res) => {
+  const x = db.data.marketItems.find((y) => y.id === Number(req.params.id));
+  if (!x) return res.status(404).json({ error: '商品不存在' });
+  if (x.userId !== req.user.id) return res.status(403).json({ error: '只有卖家可以确认交易' });
+  const buyerId = Number((req.body || {}).buyerId);
+  const buyer = db.data.users.find((u) => u.id === buyerId);
+  if (!buyer || buyer.id === req.user.id) return res.status(400).json({ error: '买家无效' });
+  // 伪造防护：买家必须与卖家就本商品有过真实私信往来
+  const chatted = db.data.messages.some(
+    (m) => ((m.fromId === buyerId && m.toId === req.user.id) || (m.fromId === req.user.id && m.toId === buyerId)) &&
+      String(m.content).includes('商品#' + x.id)
+  );
+  if (!chatted) return res.status(400).json({ error: '该用户未通过本商品私信联系过你，无法确认交易' });
+  x.status = 'sold';
+  x.dealBuyerId = buyerId;
+  notify(buyerId, 'system', req.user.id, { text: `交易完成：你购买的「${x.title}」已确认，欢迎评价` });
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/market/:id/rating', auth, requireAuth, (req, res) => {
+  const x = db.data.marketItems.find((y) => y.id === Number(req.params.id));
+  if (!x || x.status !== 'sold') return res.status(404).json({ error: '商品不存在或未完成交易' });
+  if (x.dealBuyerId !== req.user.id) return res.status(403).json({ error: '只有买家可以评价' });
+  if (db.data.ratings.some((r) => r.itemId === x.id && r.raterId === req.user.id)) {
+    return res.status(409).json({ error: '已评价过，不能重复评价' });
+  }
+  const stars = Number((req.body || {}).stars);
+  if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ error: '评分需为 1-5 星' });
+  db.data.ratings.push({
+    id: db.nextId('rating'), itemId: x.id, raterId: req.user.id, sellerId: x.userId,
+    stars, comment: String((req.body || {}).comment || '').slice(0, 200), at: Date.now(),
+  });
+  notify(x.userId, 'system', req.user.id, { text: `你售出的「${x.title}」获得 ${stars} 星评价` });
+  db.save();
+  res.json({ ok: true });
+});
+app.get('/api/market/:id/ratings', auth, (req, res) => {
+  const id = Number(req.params.id);
+  res.json({ ratings: db.data.ratings.filter((r) => r.itemId === id).map((r) => ({ stars: r.stars, comment: r.comment, at: r.at })) });
+});
+// 卖家信用（公开）
+app.get('/api/users/:id/credit', auth, (req, res) => {
+  const uid = Number(req.params.id);
+  const rs = db.data.ratings.filter((r) => r.sellerId === uid);
+  const avg = rs.length ? (rs.reduce((s, r) => s + r.stars, 0) / rs.length) : null;
+  res.json({ count: rs.length, avg: avg ? Math.round(avg * 10) / 10 : null });
+});
+
+// ---------- 校园活动与组队 ----------
+const ACT_CATS = ['自习搭子', '课程学习', '运动约伴', '游戏组队', '社团活动', '其他'];
+const ACT_FLOW = { upcoming: ['ongoing', 'cancelled'], ongoing: ['ended'], ended: [], cancelled: [] };
+
+function actView(a, me) {
+  const joins = db.data.activityJoins.filter((j) => j.activityId === a.id);
+  const joined = joins.filter((j) => j.status === 'joined');
+  return {
+    id: a.id, title: a.title, desc: a.desc, category: a.category, place: a.place,
+    startAt: a.startAt, endAt: a.endAt, joinDeadline: a.joinDeadline, capacity: a.capacity,
+    owner: publicUser(db.data.users.find((u) => u.id === a.userId)),
+    status: a.status, createdAt: a.createdAt,
+    joinedCount: joined.length, waitlistCount: joins.length - joined.length,
+    myJoin: me ? ((db.data.activityJoins.find((j) => j.activityId === a.id && j.userId === me.id) || {}).status || null) : null,
+    isMine: !!me && a.userId === me.id, canEdit: !!me && a.userId === me.id,
+    participants: hasRole(me, 'moderator') || (me && a.userId === me.id)
+      ? joined.map((j) => publicUser(db.data.users.find((u) => u.id === j.userId))).filter(Boolean)
+      : null, // 参与者名单仅发起人与管理可见
+  };
+}
+
+app.get('/api/activities', auth, LIMITS.search, (req, res) => {
+  const { category, status, mine, q, page, limit } = req.query;
+  let list = db.data.activities.slice();
+  if (mine === '1' && req.user) list = list.filter((a) => a.userId === req.user.id);
+  if (status && Object.keys(ACT_FLOW).includes(status)) list = list.filter((a) => a.status === status);
+  if (category && ACT_CATS.includes(category)) list = list.filter((a) => a.category === category);
+  if (q) { const kw = String(q).toLowerCase(); list = list.filter((a) => (a.title + ' ' + a.desc).toLowerCase().includes(kw)); }
+  list.sort((a, b) => b.createdAt - a.createdAt);
+  const pg = Math.max(1, Number(page) || 1), lm = Math.min(20, Number(limit) || 10);
+  res.json({ total: list.length, page: pg, items: list.slice((pg - 1) * lm, pg * lm).map((a) => actView(a, req.user)) });
+});
+app.get('/api/activities/:id', auth, (req, res) => {
+  const a = db.data.activities.find((x) => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: '活动不存在' });
+  res.json({ activity: actView(a, req.user) });
+});
+app.post('/api/activities', auth, requireAuth, requireNotMuted, mkLimiter(3600e3, 10), (req, res) => {
+  const b = req.body || {};
+  const title = String(b.title || '').trim();
+  if (!title || title.length > 40) return res.status(400).json({ error: '标题需为 1-40 字' });
+  const desc = String(b.desc || '').trim();
+  if (!desc || desc.length > 1000) return res.status(400).json({ error: '描述需为 1-1000 字' });
+  const startAt = Number(b.startAt), endAt = Number(b.endAt);
+  if (!(startAt > Date.now())) return res.status(400).json({ error: '开始时间必须在未来' });
+  if (!(endAt > startAt)) return res.status(400).json({ error: '结束时间必须晚于开始时间' });
+  const joinDeadline = Math.min(Number(b.joinDeadline) || startAt, startAt);
+  const capacity = Math.min(Math.max(Number(b.capacity) || 20, 2), 200);
+  const a = {
+    id: db.nextId('activity'), userId: req.user.id, title, desc,
+    category: ACT_CATS.includes(b.category) ? b.category : '其他',
+    place: String(b.place || '').slice(0, 60), startAt, endAt, joinDeadline, capacity,
+    status: 'upcoming', announcedAt: null, createdAt: Date.now(),
+  };
+  db.data.activities.push(a);
+  db.save();
+  res.json({ activity: actView(a, req.user) });
+});
+app.put('/api/activities/:id', auth, requireAuth, (req, res) => {
+  const a = db.data.activities.find((x) => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: '活动不存在' });
+  if (a.userId !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: '只有发起人可以修改' });
+  if (a.status === 'cancelled' || a.status === 'ended') return res.status(400).json({ error: '活动已结束或取消' });
+  const b = req.body || {};
+  for (const f of ['title', 'desc', 'place']) if (b[f] !== undefined) a[f] = String(b[f]).trim().slice(0, f === 'desc' ? 1000 : 60);
+  if (b.capacity !== undefined) a.capacity = Math.min(Math.max(Number(b.capacity) || a.capacity, 2), 200);
+  if (b.status !== undefined && b.status !== a.status) {
+    if (!ACT_FLOW[a.status].includes(b.status)) return res.status(400).json({ error: `非法状态转换：${a.status} → ${b.status}` });
+    a.status = b.status;
+    if (b.status === 'cancelled') {
+      for (const j of db.data.activityJoins.filter((j) => j.activityId === a.id)) {
+        notify(j.userId, 'system', req.user.id, { text: `活动「${a.title}」已取消` });
+      }
+    }
+  }
+  db.save();
+  res.json({ activity: actView(a, req.user) });
+});
+app.post('/api/activities/:id/join', auth, requireAuth, (req, res) => {
+  const a = db.data.activities.find((x) => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: '活动不存在' });
+  if (a.status !== 'upcoming') return res.status(400).json({ error: '活动不在报名期' });
+  if (Date.now() > a.joinDeadline) return res.status(400).json({ error: '已过报名截止时间' });
+  const existing = db.data.activityJoins.find((j) => j.activityId === a.id && j.userId === req.user.id);
+  if (existing) return res.status(409).json({ error: '已报名，请勿重复' });
+  const joined = db.data.activityJoins.filter((j) => j.activityId === a.id && j.status === 'joined').length;
+  const status = joined < a.capacity ? 'joined' : 'waitlist';
+  db.data.activityJoins.push({ id: db.nextId('activity'), activityId: a.id, userId: req.user.id, status, at: Date.now() });
+  if (status === 'joined') notify(a.userId, 'system', req.user.id, { text: `${req.user.nickname} 报名了「${a.title}」` });
+  db.save();
+  res.json({ ok: true, status });
+});
+app.post('/api/activities/:id/leave', auth, requireAuth, (req, res) => {
+  const a = db.data.activities.find((x) => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: '活动不存在' });
+  const i = db.data.activityJoins.findIndex((j) => j.activityId === a.id && j.userId === req.user.id);
+  if (i === -1) return res.status(404).json({ error: '你未报名该活动' });
+  db.data.activityJoins.splice(i, 1);
+  // 候补第一人自动递补
+  const wl = db.data.activityJoins.find((j) => j.activityId === a.id && j.status === 'waitlist');
+  if (wl) { wl.status = 'joined'; notify(wl.userId, 'system', req.user.id, { text: `候补递补成功：「${a.title}」` }); }
+  db.save();
+  res.json({ ok: true });
+});
+// 开始前提醒：懒调度（有人请求列表时补发到点未提醒的活动）+ 定时双保险
+function checkActivityReminders() {
+  const now = Date.now();
+  for (const a of db.data.activities) {
+    if (a.status !== 'upcoming' || a.startAt - now > 30 * 60e3 || a.startAt < now) continue;
+    if (a.remindedAt) continue;
+    a.remindedAt = now;
+    for (const j of db.data.activityJoins.filter((j) => j.activityId === a.id)) {
+      notify(j.userId, 'system', a.userId, { text: `活动「${a.title}」将于 30 分钟后开始（${a.place || '地点见详情'}）` });
+    }
+  }
+  db.save();
+}
+app.use('/api/activities', (req, res, next) => { checkActivityReminders(); next(); });
+setInterval(checkActivityReminders, 60e3).unref();
+
+// ---------- 群聊 ----------
+function groupView(g, me) {
+  const members = db.data.groupMembers.filter((m) => m.groupId === g.id);
+  return {
+    id: g.id, name: g.name, announcement: g.announcement || '',
+    owner: publicUser(db.data.users.find((u) => u.id === g.ownerId)),
+    memberCount: members.length,
+    myRole: me ? ((db.data.groupMembers.find((m) => m.groupId === g.id && m.userId === me.id) || {}).role || null) : null,
+    isMember: !!me && members.some((m) => m.userId === me.id),
+    lastMessage: (() => {
+      const msgs = db.data.messages.filter((m) => m.groupId === g.id).sort((x, y) => y.createdAt - x.createdAt);
+      return msgs[0] ? { content: msgs[0].content, createdAt: msgs[0].createdAt } : null;
+    })(),
+    createdAt: g.createdAt,
+  };
+}
+function assertMember(g, user, minRole) {
+  const m = db.data.groupMembers.find((x) => x.groupId === g.id && x.userId === user.id);
+  if (!m) return { err: 403, msg: '你不是群成员' };
+  if (minRole === 'owner' && m.role !== 'owner') return { err: 403, msg: '需要群主权限' };
+  return { m };
+}
+app.post('/api/groups', auth, requireAuth, requireNotMuted, mkLimiter(3600e3, 10), (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  if (!name || name.length > 20) return res.status(400).json({ error: '群名需为 1-20 字' });
+  const g = { id: db.nextId('group'), name, ownerId: req.user.id, announcement: '', createdAt: Date.now() };
+  db.data.groups.push(g);
+  db.data.groupMembers.push({ groupId: g.id, userId: req.user.id, role: 'owner', joinedAt: Date.now() });
+  db.save();
+  res.json({ group: groupView(g, req.user) });
+});
+app.get('/api/me/groups', auth, requireAuth, (req, res) => {
+  const ids = new Set(db.data.groupMembers.filter((m) => m.userId === req.user.id).map((m) => m.groupId));
+  res.json({ groups: db.data.groups.filter((g) => ids.has(g.id)).map((g) => groupView(g, req.user)) });
+});
+app.get('/api/groups/:id', auth, requireAuth, (req, res) => {
+  const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+  if (!g) return res.status(404).json({ error: '群不存在' });
+  const chk = assertMember(g, req.user);
+  if (chk.err) return res.status(chk.err).json({ error: chk.msg });
+  const members = db.data.groupMembers.filter((m) => m.groupId === g.id)
+    .map((m) => ({ ...publicUser(db.data.users.find((u) => u.id === m.userId)), groupRole: m.role }));
+  res.json({ group: groupView(g, req.user), members });
+});
+app.post('/api/groups/:id/invite', auth, requireAuth, (req, res) => {
+  const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+  if (!g) return res.status(404).json({ error: '群不存在' });
+  const chk = assertMember(g, req.user);
+  if (chk.err) return res.status(chk.err).json({ error: chk.msg });
+  const target = db.data.users.find((u) => u.id === Number((req.body || {}).userId));
+  if (!target) return res.status(404).json({ error: '用户不存在' });
+  if (db.data.groupMembers.some((m) => m.groupId === g.id && m.userId === target.id)) return res.status(409).json({ error: '已在群内' });
+  db.data.groupMembers.push({ groupId: g.id, userId: target.id, role: 'member', joinedAt: Date.now() });
+  notify(target.id, 'system', req.user.id, { text: `你被邀请加入群「${g.name}」` });
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/groups/:id/kick', auth, requireAuth, (req, res) => {
+  const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+  if (!g) return res.status(404).json({ error: '群不存在' });
+  const chk = assertMember(g, req.user, 'owner');
+  if (chk.err) return res.status(chk.err).json({ error: chk.msg });
+  const uid = Number((req.body || {}).userId);
+  if (uid === g.ownerId) return res.status(400).json({ error: '不能移除群主' });
+  db.data.groupMembers = db.data.groupMembers.filter((m) => !(m.groupId === g.id && m.userId === uid));
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/groups/:id/leave', auth, requireAuth, (req, res) => {
+  const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+  if (!g) return res.status(404).json({ error: '群不存在' });
+  if (g.ownerId === req.user.id) return res.status(400).json({ error: '群主需先转让或解散（删除全部消息前不可退出）' });
+  db.data.groupMembers = db.data.groupMembers.filter((m) => !(m.groupId === g.id && m.userId === req.user.id));
+  db.save();
+  res.json({ ok: true });
+});
+app.put('/api/groups/:id/announcement', auth, requireAuth, (req, res) => {
+  const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+  if (!g) return res.status(404).json({ error: '群不存在' });
+  const chk = assertMember(g, req.user, 'owner');
+  if (chk.err) return res.status(chk.err).json({ error: chk.msg });
+  g.announcement = String((req.body || {}).announcement || '').slice(0, 200);
+  for (const m of db.data.groupMembers.filter((m) => m.groupId === g.id)) {
+    notify(m.userId, 'system', req.user.id, { text: `群「${g.name}」公告更新` });
+  }
+  db.save();
+  res.json({ ok: true });
+});
+app.get('/api/groups/:id/messages', auth, requireAuth, (req, res) => {
+  const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+  if (!g) return res.status(404).json({ error: '群不存在' });
+  const chk = assertMember(g, req.user);
+  if (chk.err) return res.status(chk.err).json({ error: chk.msg });
+  const msgs = db.data.messages
+    .filter((m) => m.groupId === g.id)
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .slice(-100)
+    .map((m) => ({
+      id: m.id, content: m.recalledAt ? null : m.content, recalled: !!m.recalledAt,
+      from: publicUser(db.data.users.find((u) => u.id === m.fromId)),
+      createdAt: m.createdAt, fromMe: m.fromId === req.user.id,
+    }));
+  res.json({ messages: msgs });
+});
+// 群消息发送（REST，与 WS 同一校验函数）
+function sendGroupMessage(user, groupId, content, clientId) {
+  const g = db.data.groups.find((x) => x.id === groupId);
+  if (!g) return { err: 404, msg: '群不存在' };
+  const chk = assertMember(g, user);
+  if (chk.err) return { err: chk.err, msg: chk.msg };
+  if (isMuted(user)) return { err: 403, msg: '你已被禁言' };
+  content = String(content || '').trim();
+  if (!content || content.length > 2000) return { err: 400, msg: '内容需为 1-2000 字' };
+  if (clientId) {
+    const dup = db.data.messages.find((m) => m.groupId === groupId && m.fromId === user.id && m.clientId === clientId && Date.now() - m.createdAt < 24 * 3600e3);
+    if (dup) return { data: dup, deduped: true };
+  }
+  const msg = {
+    id: db.nextId('message'), groupId, fromId: user.id, toId: null,
+    content, createdAt: Date.now(), readAt: null, recalledAt: null, replyTo: null, clientId: clientId || null,
+  };
+  db.data.messages.push(msg);
+  db.save();
+  return { data: msg };
+}
+app.post('/api/groups/:id/messages', auth, requireAuth, LIMITS.message, (req, res) => {
+  const r = sendGroupMessage(req.user, Number(req.params.id), (req.body || {}).content, (req.body || {}).clientId);
+  if (r.err) return res.status(r.err).json({ error: r.msg });
+  if (!r.deduped) {
+    const g = db.data.groups.find((x) => x.id === Number(req.params.id));
+    for (const m of db.data.groupMembers.filter((m) => m.groupId === g.id && m.userId !== req.user.id)) {
+      notify(m.userId, 'dm', req.user.id, { text: '' }); // 群消息通知不含内容
+    }
+  }
+  res.json({ message: { id: r.data.id, content: r.data.content, createdAt: r.data.createdAt, fromMe: true }, deduped: !!r.deduped });
+});
+
+// ---------- 通知偏好 ----------
+app.put('/api/me/notif-prefs', auth, requireAuth, (req, res) => {
+  const b = req.body || {};
+  const p = req.user.notifPrefs;
+  if (Array.isArray(b.off)) p.off = [...new Set(b.off.map(String))].filter((t) => ['like','comment','follow','mention','dm','system'].includes(t));
+  if (b.dndStart !== undefined) p.dndStart = /^\d{2}:\d{2}$/.test(b.dndStart) ? b.dndStart : null;
+  if (b.dndEnd !== undefined) p.dndEnd = /^\d{2}:\d{2}$/.test(b.dndEnd) ? b.dndEnd : null;
+  db.save();
+  res.json({ prefs: p });
+});
+
+// ---------- 处罚与申诉 ----------
+app.get('/api/admin/punishments', auth, requireRole('moderator'), (req, res) => {
+  res.json({ punishments: db.data.punishments.slice().sort((a, b) => b.at - a.at).slice(0, 100).map((x) => ({
+    ...x, user: publicUser(db.data.users.find((u) => u.id === x.userId)),
+    byUser: publicUser(db.data.users.find((u) => u.id === x.by)),
+  })) });
+});
+app.post('/api/admin/users/:id/mute', auth, requireRole('moderator'), (req, res) => {
+  const u = db.data.users.find((x) => x.id === Number(req.params.id));
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  if (hasRole(u, 'moderator') || u.id === req.user.id) return res.status(403).json({ error: '不能处罚管理人员' });
+  const hours = Math.min(Math.max(Number((req.body || {}).hours) || 24, 1), 24 * 30);
+  const reason = String((req.body || {}).reason || '违反社区规范').slice(0, 100);
+  u.mute = { until: Date.now() + hours * 3600e3, reason };
+  const p = { id: db.nextId('punishment'), userId: u.id, type: 'mute', reason, until: u.mute.until, by: req.user.id, at: Date.now(), appeal: null };
+  db.data.punishments.push(p);
+  adminLog(req.user, 'mute_user', 'user', u.id, reason + ' ' + hours + 'h');
+  notify(u.id, 'system', req.user.id, { text: `你已被禁言 ${hours} 小时（原因：${reason}），可在处罚记录中申诉` });
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/punishments/:id/appeal', auth, requireAuth, (req, res) => {
+  const p = db.data.punishments.find((x) => x.id === Number(req.params.id));
+  if (!p || p.userId !== req.user.id) return res.status(404).json({ error: '处罚记录不存在' });
+  if (p.appeal) return res.status(409).json({ error: '已提交过申诉' });
+  p.appeal = { note: String((req.body || {}).note || '').slice(0, 300), status: 'pending', at: Date.now() };
+  for (const a of db.data.users.filter((u) => isAdmin(u))) notify(a.id, 'system', req.user.id, { text: '有新的处罚申诉待处理' });
+  db.save();
+  res.json({ ok: true });
+});
+app.post('/api/admin/punishments/:id/appeal/resolve', auth, requireRole('admin'), (req, res) => {
+  const p = db.data.punishments.find((x) => x.id === Number(req.params.id));
+  if (!p || !p.appeal || p.appeal.status !== 'pending') return res.status(404).json({ error: '申诉不存在' });
+  const accept = (req.body || {}).accept !== false;
+  p.appeal.status = accept ? 'accepted' : 'rejected';
+  p.appeal.result = String((req.body || {}).note || '').slice(0, 200);
+  if (accept && p.type === 'mute') {
+    const u = db.data.users.find((x) => x.id === p.userId);
+    if (u) u.mute = null; // 申诉成功即解除
+  }
+  notify(p.userId, 'system', req.user.id, { text: accept ? '你的申诉已通过，处罚已解除' : '你的申诉未通过' });
+  adminLog(req.user, 'appeal_resolve', 'punishment', p.id, accept ? 'accepted' : 'rejected');
+  db.save();
+  res.json({ ok: true });
+});
+
+// ---------- 校园热榜（60s 缓存 + 时间衰减 + 异常抑制） ----------
+function computeHot() {
+  const now = Date.now();
+  const decay = (t) => Math.exp(-(now - t) / (48 * 3600e3)); // 48h 半衰期量级
+  const posts = db.data.posts.filter((x) => x.status === 'published' && x.visibility === 'public' && !x.hidden);
+  const boardHot = db.BOARDS.map((b) => {
+    const bp = posts.filter((x) => x.board === b.id);
+    const scored = bp.map((x) => {
+      const comments = db.data.comments.filter((c) => c.postId === x.id).length;
+      // 异常抑制：同一用户重复互动只计一次（likes 数组本身去重），加 sqrt 压缩刷量收益
+      const engage = Math.sqrt(x.likes.length * 3 + comments * 2 + (x.views || 0) * 0.1);
+      return { id: x.id, title: x.title, score: Math.round(engage * decay(x.createdAt) * 100) / 100 };
+    }).sort((a, b2) => b2.score - a.score).slice(0, 5);
+    return { board: b.id, name: b.name, posts: scored };
+  });
+  const marketHot = db.data.marketItems.filter((x) => x.status === 'onsale')
+    .map((x) => ({ id: x.id, title: x.title, score: Math.round(Math.sqrt((x.favs || []).length * 4 + (x.views || 0) * 0.2) * decay(x.createdAt) * 100) / 100 }))
+    .sort((a, b2) => b2.score - a.score).slice(0, 5);
+  const actHot = db.data.activities.filter((x) => x.status === 'upcoming')
+    .map((x) => ({ id: x.id, title: x.title, score: db.data.activityJoins.filter((j) => j.activityId === x.id && j.status === 'joined').length }))
+    .sort((a, b2) => b2.score - a.score).slice(0, 5);
+  return { generatedAt: now, boards: boardHot, market: marketHot, activities: actHot };
+}
+app.get('/api/hot', auth, (req, res) => {
+  const c = db.data.hotCache;
+  if (!c.data || Date.now() - c.at > 60e3) {
+    c.data = computeHot();
+    c.at = Date.now();
+    db.save();
+  }
+  res.json(c.data);
+});
+
+// ---------- 版主（按版块授权，最小权限） ----------
+app.put('/api/admin/users/:id/role', auth, requireRole('admin'), (req, res) => {
+  const u = db.data.users.find((x) => x.id === Number(req.params.id));
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  const { role, boards } = req.body || {};
+  if (!['user', 'auditor', 'moderator'].includes(role)) return res.status(400).json({ error: '角色参数不正确（不可直接授予管理员）' });
+  if (isAdmin(u)) return res.status(403).json({ error: '不能修改管理员角色' });
+  u.role = role;
+  u.modBoards = role === 'moderator' && Array.isArray(boards) ? boards.filter((x) => db.BOARDS.some((b) => b.id === x)).slice(0, 5) : undefined;
+  adminLog(req.user, 'set_role:' + role, 'user', u.id, (u.modBoards || []).join(','));
+  db.save();
+  res.json({ ok: true });
+});
+
+// ---------- 轻量插件接口（server/plugins/*.js 可选加载，默认空） ----------
+(function loadPlugins() {
+  const dir = path.join(__dirname, 'plugins');
+  if (!fs.existsSync(dir)) return;
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js')).slice(0, 10)) {
+    try {
+      const mod = require(path.join(dir, f));
+      if (mod && typeof mod.init === 'function') {
+        mod.init({ app, db, notify, publicUser, secLog });
+        console.log('[plugin] loaded:', f);
+      }
+    } catch (err) {
+      console.error('[plugin] 加载失败:', f, err.message);
+    }
+  }
+})();
+
+app.get('/api/health', (req, res) => res.json({ ok: true, app: 'DGChat', version: '2.5.0', schema: db.SCHEMA_VERSION }));
 
 // 404（API）
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
@@ -1973,3 +2730,126 @@ const server = app.listen(PORT, () => {
 server.requestTimeout = 30e3; // 请求处理超时
 server.headersTimeout = 31e3; // 防慢速 HTTP 攻击（必须略大于 requestTimeout）
 server.keepAliveTimeout = 15e3;
+
+// ---------- WebSocket 实时（ws）：在线/输入中/送达回执/实时收发 ----------
+let WSS = null;
+try {
+  const { WebSocketServer } = require('ws');
+  WSS = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
+  const online = new Map(); // userId -> Set<ws>
+  const wsLimiter = new Map(); // userId -> {count, reset}
+  function originAllowed(req) {
+    const o = req.headers.origin;
+    if (!o) return true; // 非浏览器客户端（Node 测试）放行，认证仍必须
+    return CORS_ALLOWED.has(o) || o.startsWith('capacitor://') || o.startsWith('ionic://');
+  }
+  WSS.on('connection', (ws, req) => {
+    if (!originAllowed(req)) return ws.close(4001, 'origin');
+    const url = new URL(req.url, 'http://x');
+    const token = url.searchParams.get('token') || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const rec = token && db.data.tokens[token];
+    const uid = rec ? (typeof rec === 'number' ? rec : rec.u) : null;
+    const user = uid ? db.data.users.find((u) => u.id === uid) : null;
+    if (!user || user.status === 'banned') return ws.close(4003, 'auth');
+    ws.uid = user.id;
+    ws.isAlive = true;
+    if (!online.has(user.id)) online.set(user.id, new Set());
+    online.get(user.id).add(ws);
+    // 在线状态广播（限频）
+    const presenceMsg = JSON.stringify({ type: 'presence', online: [...online.keys()] });
+    for (const set of online.values()) for (const c of set) if (c.readyState === 1) c.send(presenceMsg);
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('message', (raw) => {
+      // 频控：每用户 20 条/10 秒
+      let lim = wsLimiter.get(user.id);
+      const now = Date.now();
+      if (!lim || lim.reset < now) { lim = { count: 0, reset: now + 10e3 }; wsLimiter.set(user.id, lim); }
+      if (++lim.count > 20) return ws.send(JSON.stringify({ type: 'error', error: '消息过快' }));
+      let data;
+      try { data = JSON.parse(raw.toString()); } catch { return; }
+      if (data.type === 'typing') {
+        // 输入中提示：单聊发给对方，群聊发给群成员
+        const payload = JSON.stringify({ type: 'typing', from: user.id, groupId: data.groupId || null });
+        if (data.groupId) {
+          const g = db.data.groups.find((x) => x.id === Number(data.groupId));
+          if (g && db.data.groupMembers.some((m) => m.groupId === g.id && m.userId === user.id)) {
+            for (const m of db.data.groupMembers.filter((m) => m.groupId === g.id && m.userId !== user.id)) {
+              for (const c of online.get(m.userId) || []) if (c.readyState === 1) c.send(payload);
+            }
+          }
+        } else if (data.to) {
+          for (const c of online.get(Number(data.to)) || []) if (c.readyState === 1) c.send(payload);
+        }
+        return;
+      }
+      if (data.type === 'send') {
+        // 实时发送（与 REST 同一校验/幂等路径）
+        let result, msg, target = null;
+        if (data.groupId) {
+          const r = sendGroupMessage(user, Number(data.groupId), data.content, data.clientId);
+          if (r.err) return ws.send(JSON.stringify({ type: 'error', error: r.msg }));
+          result = r; msg = r.data;
+          const g = db.data.groups.find((x) => x.id === Number(data.groupId));
+          target = { groupId: g.id, name: g.name, members: db.data.groupMembers.filter((m) => m.groupId === g.id).map((m) => m.userId) };
+        } else {
+          const partner = db.data.users.find((u) => u.id === Number(data.to));
+          if (!partner || partner.id === user.id) return ws.send(JSON.stringify({ type: 'error', error: '接收者无效' }));
+          if (isMuted(user)) return ws.send(JSON.stringify({ type: 'error', error: '你已被禁言' }));
+          if (partner.settings && partner.settings.dmPolicy === 'following' && !(partner.following || []).includes(user.id)) {
+            return ws.send(JSON.stringify({ type: 'error', error: '对方仅接收关注者的私信' }));
+          }
+          if (blockedPair(partner, user)) return ws.send(JSON.stringify({ type: 'error', error: '无法向该用户发送私信' }));
+          const content = String(data.content || '').trim();
+          if (!content || content.length > 2000) return ws.send(JSON.stringify({ type: 'error', error: '内容需为 1-2000 字' }));
+          let dup = null;
+          if (data.clientId) dup = db.data.messages.find((m) => m.fromId === user.id && m.clientId === data.clientId && Date.now() - m.createdAt < 24 * 3600e3);
+          if (dup) msg = dup;
+          else {
+            msg = { id: db.nextId('message'), fromId: user.id, toId: partner.id, groupId: null, content, createdAt: Date.now(), readAt: null, recalledAt: null, replyTo: null, clientId: data.clientId || null };
+            db.data.messages.push(msg);
+            db.save();
+          }
+          result = { data: msg, deduped: !!dup };
+          target = { groupId: null, members: [user.id, partner.id] };
+        }
+        // 服务端回执（发送者拿到服务器确认 + 消息 ID）
+        ws.send(JSON.stringify({ type: 'sent', clientId: data.clientId || null, deduped: !!result.deduped, message: { id: msg.id, content: msg.content, createdAt: msg.createdAt, fromMe: true, groupId: msg.groupId } }));
+        // 实时分发给收件方（不回发给发送者本人的其他连接以外的重复内容）
+        const payload = JSON.stringify({ type: 'message', message: { id: msg.id, content: msg.content, createdAt: msg.createdAt, fromMe: false, groupId: msg.groupId, from: publicUser(user) } });
+        for (const uid2 of target.members) {
+          if (uid2 === user.id) continue;
+          for (const c of online.get(uid2) || []) if (c.readyState === 1) c.send(payload);
+        }
+        return;
+      }
+      if (data.type === 'read') {
+        // 已读回执
+        if (data.groupId) {
+          for (const m of db.data.messages.filter((m) => m.groupId === Number(data.groupId) && m.fromId !== user.id && !m.readAt)) m.readAt = Date.now();
+        } else {
+          const m = db.data.messages.find((x) => x.id === Number(data.messageId) && x.toId === user.id);
+          if (m) m.readAt = Date.now();
+        }
+        db.save();
+        return;
+      }
+    });
+    ws.on('close', () => {
+      const set = online.get(user.id);
+      if (set) { set.delete(ws); if (!set.size) { online.delete(user.id); const p = JSON.stringify({ type: 'presence', online: [...online.keys()] }); for (const s2 of online.values()) for (const c of s2) if (c.readyState === 1) c.send(p); } }
+    });
+  });
+  // 心动检测死连接
+  setInterval(() => {
+    if (!WSS) return;
+    for (const set of online.values()) for (const c of set) {
+      if (!c.isAlive) { c.terminate(); continue; }
+      c.isAlive = false;
+      try { c.ping(); } catch {}
+    }
+  }, 30e3).unref();
+  console.log('[ws] 实时通道已启用 /ws（REST 轮询仍可用作降级）');
+} catch (err) {
+  console.error('[ws] 初始化失败，回退纯 REST 模式:', err.message);
+}
+

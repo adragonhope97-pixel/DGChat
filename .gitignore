@@ -11,3 +11,5 @@ ios/DerivedData/
 *.ipa
 logs/
 dist/
+.env
+data_backup_*/

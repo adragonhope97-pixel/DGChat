@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md) | [繁體中文（臺灣）](README.zh-TW.md)
 
-> **当前版本 v2.1** · 完整版本记录见 [CHANGELOG.md](CHANGELOG.md)
+> **当前版本 v2.5** · 功能状态登记册见 [docs/FEATURE-REGISTRY.md](docs/FEATURE-REGISTRY.md) · 完整版本记录见 [CHANGELOG.md](CHANGELOG.md)
 
 **DGChat** 是一个开箱即用的校园论坛（校园墙）应用：一套代码，同时覆盖 **Web / PWA / Android / iOS** 四种形态。后端为零数据库依赖的 Node.js + Express（JSON 文件存储），前端为原生 HTML/CSS/JS 单页应用，配合「液态玻璃」视觉风格与多主题背景系统。
 
@@ -101,6 +101,17 @@
 | `data/migrations/`（运行时生成） | 升级前的原始数据备份，可回滚 |
 
 ---
+
+## 🆕 DGChat 2.5 新特性
+
+- **广场（新底栏标签）**：二手市场（状态机/收藏/联系卖家/交易确认防伪造/买家评价/卖家信用）、活动组队（报名/候补/递补/开始前提醒）、校园热榜（互动×时间衰减防刷）
+- **实时通讯**：WebSocket /ws（认证/频控/降级轮询）——实时私信、在线状态、正在输入、已读回执；**群聊**（建群/邀请/公告/群主权限）
+- **帖子投票**（单/多选/匿名/截止/防重复）与**校园互助**（求助→处理→已解决）
+- **校园认证**：注册策略四种（开放/校园邮箱/邀请码一次性/人工审核）+ 认证徽章；**匿名保护**（去匿名仅管理员+双日志审计）
+- **治理体系**：五级角色（owner/admin/moderator/auditor/user）+ 版主分版块授权 + 禁言/处罚/申诉人工复核 + 反垃圾（重复内容/垃圾链接自动举报）
+- **通知偏好**：类型开关 + 免打扰时段；**数据可靠性**：写队列防并发覆盖（测试证据）+ 损坏自动恢复
+- **部署**：Dockerfile + docker-compose + .env.example + [docs/DEPLOY.md](docs/DEPLOY.md)（三模式/HTTPS/备份恢复/升级回滚/卸载）+ 首次启动向导（站点设置）+ 插件接口
+- 数据 schema v4（自动迁移 + 迁移前备份）；测试 **61 项**全绿
 
 ## 🆕 DGChat 2.1 新特性
 
@@ -377,6 +388,7 @@ cd ios/App && xcodebuild -scheme App -configuration Debug -destination 'generic/
 
 | 项 | 说明 |
 | --- | --- |
+| Docker 一键部署 | `docker compose up -d --build`（数据卷持久化 + 健康检查），详见 [docs/DEPLOY.md](docs/DEPLOY.md) |
 | HTTPS | Nginx/Caddy 终止 TLS 并反代，透传 `X-Forwarded-Proto` 后 HSTS 自动启用 |
 | CDN / WAF / DDoS | 应用层限流无法抵御大流量攻击，请启用部署平台提供的防护能力 |
 | 环境变量 | `PORT` / `APP_NAME` / `CORS_ORIGINS`（额外跨域来源）/ `FORCE_HSTS=1` / `SESSION_TTL_MS` / `LOGIN_MAX_FAILS` / `LOGIN_LOCK_MS` |
